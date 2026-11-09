@@ -1,0 +1,73 @@
+# Приклад конфігурації Silent Leads Retouch MVP. Скопіюйте в config.yaml і за потреби змініть.
+# Секретів тут немає і бути не повинно — інструмент працює офлайн.
+
+# Строк першого повторного касання в КАЛЕНДАРНИХ днях після переходу в silent.
+# 7 — тестове припущення зі спринту, НЕ затверджений регламент продажів.
+first_touch_delay_days: 7
+
+# Часовий пояс CRM. Усі дати у вигрузці — локальний час CRM; порівняння ведеться в цій зоні.
+crm_timezone: America/Los_Angeles
+
+# Момент знімка вигрузки. null → береться з вкладки «Інструкція», рядок «Знімок UTC».
+# Задайте явно (ISO 8601 з зоною), якщо у файлі цього рядка немає.
+snapshot_utc: null
+
+# Назви вкладок у файлі вигрузки.
+sheets:
+  leads: Ліди
+  messages: Повідомлення
+  instruction: Інструкція
+  control: Контроль
+
+# Шаблони повідомлень. Затверджених шаблонів замовник не надав, тому за замовчуванням
+# текст порожній, а статус template_missing. Для демонстрації можна вписати текст і
+# поставити status: test_template — він ніколи не позначається як затверджений.
+# Заборонено вигадувати знижки, ціни, дати та будь-які комерційні обіцянки.
+templates:
+  with_quote:
+    text: ""
+    status: template_missing
+  without_quote:
+    text: ""
+    status: template_missing
+
+# Фрази, за якими в репліках КЛІЄНТА шукаємо відписку та однозначний негатив (без урахування регістру).
+# opt_out  → do_not_contact. negative → do_not_contact (однозначний негатив).
+# Розширюйте список після перегляду реальних кейсів; кожна зміна — у docs/review-log.md.
+phrases:
+  opt_out:
+    - "stop"
+    - "unsubscribe"
+    - "don't text"
+    - "dont text"
+    - "do not text"
+    - "don't call"
+    - "dont call"
+    - "do not call"
+    - "don't contact"
+    - "do not contact"
+    - "don't message"
+    - "do not message"
+    - "stop texting"
+    - "stop calling"
+    - "stop contacting"
+    - "remove me"
+    - "take me off"
+    - "leave me alone"
+    - "no more messages"
+    - "no more calls"
+  negative:
+    - "not interested"
+    - "no longer interested"
+    - "wrong number"
+    - "never contacted you"
+    - "already hired someone"
+    - "went with someone else"
+    - "went with another"
+    - "found someone else"
+    - "no longer need"
+    - "don't need"
+    - "cancel"
+
+# Якщо в транскрипті є репліки з невизначеним автором поряд з ключовими фразами — ручна перевірка.
+unknown_speaker_requires_review: true

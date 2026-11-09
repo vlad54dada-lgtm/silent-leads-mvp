@@ -14,7 +14,7 @@
 | Шар | Технологія |
 |---|---|
 | Мова | Python 3.12+ (локально 3.14), менеджер — `uv` |
-| Дані | `pandas` + `openpyxl` (читання/запис Excel), CSV через stdlib |
+| Дані | `openpyxl` (читання/запис Excel), CSV через stdlib. **Без pandas** — 50 лідів цього не потребують, а його DLL блокує Application Control на машині розробника |
 | Моделі/валідація | `pydantic` v2 — конфіг і доменні моделі (Lead, Message, Decision) |
 | CLI | `typer` |
 | Конфіг | YAML (`config.yaml`), приклад у `config.example.yaml` |
@@ -28,9 +28,10 @@
 
 ```
 src/silent_leads/
-  cli.py            # typer: `silent-leads run --input ... --config ... --output ...`
+  cli.py            # typer: `validate` (перевірка файлу) і `run` (повний прогін)
   config.py         # pydantic-модель конфігу + завантаження YAML
   models.py         # Lead, Message, Decision, DataIssue, enum'и рішень
+  snapshot.py       # контрольна дата: з конфігу або з «Інструкція» → «Знімок UTC», у зоні CRM
   io/
     reader.py       # читання вкладок Excel → DataFrame → моделі
     writer.py       # results.xlsx/.csv, summary.md/.json
@@ -57,13 +58,22 @@ docs/
 
 ## Команди
 
+> На машині розробника Windows Application Control блокує uv-managed Python і `.exe`-обгортки
+> в `.venv/Scripts`. Тому: venv створюється з системного Python 3.14, усе запускається через `python -m`.
+> Перед `uv`-командами в цьому середовищі: `export UV_PYTHON_PREFERENCE=only-system`
+> `UV_PYTHON="C:/Users/Acer/AppData/Local/Python/pythoncore-3.14-64/python.exe"`.
+> На іншій машині достатньо `uv sync`.
+
 ```bash
 uv sync                                   # встановити залежності
-uv run silent-leads run --input data/input/export.xlsx --config config.yaml --output data/output
-uv run pytest                             # тести
-uv run ruff check . && uv run ruff format --check .
-uv run mypy src
+uv run python -m silent_leads.cli validate --input data/input/export.xlsx --config config.example.yaml
+uv run python -m silent_leads.cli run --input data/input/export.xlsx --config config.yaml --output data/output
+uv run python -m pytest                   # тести
+uv run python -m ruff check . && uv run python -m ruff format --check .
+uv run python -m mypy
 ```
+
+У виводі CLI — лише ASCII-символи поза кирилицею (без `→`, `✓` тощо): консоль Windows у cp1251 падає на них.
 
 ## Правила — ЗАВЖДИ
 
