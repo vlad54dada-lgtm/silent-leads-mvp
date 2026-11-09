@@ -1,29 +1,27 @@
-# dependencies
-node_modules/
+# confidential CRM export and results — never commit
+data/
+*.xlsx
+*.xls
+*.csv
+!tests/fixtures/**
 
-# next.js / build
-.next/
-out/
-build/
-*.tsbuildinfo
-next-env.d.ts
-
-# env (secrets!)
+# config with real values (example stays)
+config.yaml
 .env
-.env*.local
-!.env.example
+.env.*
 
-# tests
-coverage/
-playwright-report/
-test-results/
-
-# supabase local
-supabase/.temp/
-supabase/.branches/
-
-# vercel
-.vercel/
+# python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
 
 # os / editors
 .DS_Store
