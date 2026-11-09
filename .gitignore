@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+
+# next.js / build
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# env (secrets!)
+.env
+.env*.local
+!.env.example
+
+# tests
+coverage/
+playwright-report/
+test-results/
+
+# supabase local
+supabase/.temp/
+supabase/.branches/
+
+# vercel
+.vercel/
+
+# os / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
