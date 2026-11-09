@@ -7,7 +7,7 @@
 
 | Перевірка | Команда | Результат |
 |---|---|---|
-| Unit і end-to-end тести | `uv run python -m pytest` | **131 passed** за 9,1 с, 0 failed, 0 skipped |
+| Unit і end-to-end тести | `uv run python -m pytest` | **132 passed** за 8,2 с, 0 failed, 0 skipped |
 | Лінтер | `uv run python -m ruff check .` | All checks passed |
 | Форматування | `uv run python -m ruff format --check .` | 40 files already formatted |
 | Типи | `uv run python -m mypy` (strict) | Success: no issues found in 20 source files |
@@ -17,7 +17,7 @@
 | Файл | Тестів | Що покриває |
 |---|---|---|
 | `tests/test_rules_history_decide.py` | 50 | Точний STOP/UNSUBSCRIBE і його межі (включно з юнікод-варіантами), підказки без AI, авторство, події після silent, приховані тексти, вхідні події без тексту, невизначений автор, обрізаний вхід AI, пріоритет рішень, усі гілки AI в `decide` |
-| `tests/test_evaluation.py` | 15 | Метрики розмітки людиною: точність, пропущені/хибні відмови, матриця, нормалізація міток, читання CSV |
+| `tests/test_evaluation.py` | 16 | Метрики розмітки людиною: точність, пропущені/хибні відмови, матриця, нормалізація міток, читання CSV з комою і крапкою з комою (Excel) |
 | `tests/test_ai_reviewer_client.py` | 11 | Клієнт моделі: ключ зі змінної середовища, шлюз `base_url`, структурована відповідь і запасний JSON-режим, помилки |
 | `tests/test_rules_due_date.py` | 8 | Строк касання: до, в день, після, межа доби в зоні CRM, параметр у конфігу |
 | `tests/test_ai_review.py` | 8 | Побудова діалогу для моделі, обрізання за лімітом, фільтр доказів по кейсу, обробка відповіді, некоректний тип відповіді ревʼюера |

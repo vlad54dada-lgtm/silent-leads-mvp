@@ -55,7 +55,11 @@ def normalize_label(value: str | None) -> str | None:
 def read_labels_csv(path: Path) -> list[EvalRow]:
     """Rows of ``ai_labels.csv`` (as written by ``run``, with human columns filled in)."""
     with path.open(encoding="utf-8-sig", newline="") as fh:
-        reader = csv.DictReader(fh)
+        # Excel with a Ukrainian/European locale saves CSV with ';' — accept both separators.
+        header = fh.readline()
+        fh.seek(0)
+        delimiter = ";" if header.count(";") > header.count(",") else ","
+        reader = csv.DictReader(fh, delimiter=delimiter)
         rows: list[EvalRow] = []
         for record in reader:
             rows.append(

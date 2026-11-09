@@ -180,3 +180,18 @@ def test_cli_ai_eval_refuses_when_ai_disabled(tmp_path: Path) -> None:
         app, ["ai-eval", "--config", str(EXAMPLE_CONFIG), "--output", str(tmp_path / "o")]
     )
     assert result.exit_code == 5
+
+
+def test_labels_csv_saved_by_excel_with_semicolons_is_read(tmp_path: Path) -> None:
+    path = tmp_path / "ai_labels.csv"
+    path.write_text(
+        "\ufeff" + ";".join(AI_LABEL_COLUMNS) + "\n"
+        "L1;contact_candidate;none;high;;ok;;none;\n"
+        "L2;do_not_contact;negative;high;L2-M1;refused;;opt_out;close enough\n",
+        encoding="utf-8",
+    )
+    rows = read_labels_csv(path)
+    assert [r.case_id for r in rows] == ["L1", "L2"]
+    assert rows[0].expected == "none"
+    assert rows[1].expected == "opt_out"
+    assert rows[1].predicted == "negative"
