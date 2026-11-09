@@ -101,7 +101,7 @@ def test_structured_answer_is_returned_as_is(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     fake_client.parse_result = _Response(
         parsed_output=parse_assessment_text(
-            '{"label": "opt_out", "evidence_message_ids": ["M2"], "explanation": "ok"}'
+            '{"label": "opt_out", "confidence": "high", "evidence_message_ids": ["M2"], "explanation": "ok"}'
         )
     )
     result = ClaudeReviewer(AiReview(enabled=True)).assess("L1", "[]")
@@ -118,7 +118,8 @@ def test_bad_request_falls_back_to_plain_json(
     fake_client.create_result = _Response(
         content=[
             _TextBlock(
-                'Sure:\n```json\n{"label": "negative", "evidence_message_ids": [], "explanation": "No."}\n```'
+                'Sure:\n```json\n{"label": "negative", "confidence": "high", '
+                '"evidence_message_ids": [], "explanation": "No."}\n```'
             )
         ]
     )
@@ -138,9 +139,11 @@ def test_fallback_rejects_non_json_or_schema_violations(
     with pytest.raises(ValueError, match="JSON"):
         ClaudeReviewer(AiReview(enabled=True)).assess("L1", "[]")
     with pytest.raises(ValueError):
-        parse_assessment_text('{"label": "maybe", "explanation": "x"}')
+        parse_assessment_text('{"label": "maybe", "confidence": "high", "explanation": "x"}')
     with pytest.raises(ValueError):
-        parse_assessment_text('{"label": "none", "explanation": "x", "extra": 1}')
+        parse_assessment_text('{"label": "none", "explanation": "x"}')  # confidence missing
+    with pytest.raises(ValueError):
+        parse_assessment_text('{"label": "none", "confidence": "high", "explanation": "x", "extra": 1}')
 
 
 def test_refusal_in_fallback_is_unclear(

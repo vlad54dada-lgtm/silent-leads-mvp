@@ -7,14 +7,14 @@ from dataclasses import dataclass, field
 
 from silent_leads.config import Config
 from silent_leads.io.reader import Export
-from silent_leads.models import CaseResult, DataIssue, Decision
-from silent_leads.rules.ai_review import AiOutcome, Reviewer, apply_ai_outcome, review_candidate
+from silent_leads.models import CaseResult, DataIssue
+from silent_leads.rules.ai_review import AiOutcome, Reviewer, review_case
 from silent_leads.rules.decide import decide
 from silent_leads.rules.due_date import check_due
-from silent_leads.rules.history import Finding, analyse_history
+from silent_leads.rules.history import Finding, FindingKind, analyse_history, has_client_text
 from silent_leads.snapshot import Snapshot, resolve_snapshot
 from silent_leads.templates import prepare_draft
-from silent_leads.timeline import build_timelines
+from silent_leads.timeline import CaseTimeline, build_timelines
 from silent_leads.validation import validate_links
 
 
@@ -25,6 +25,13 @@ class RunResult:
     issues: tuple[DataIssue, ...]
     findings: dict[str, tuple[Finding, ...]]
     ai_outcomes: dict[str, AiOutcome] = field(default_factory=dict)  # only reviewed cases
+
+
+def needs_ai_review(timeline: CaseTimeline, findings: list[Finding]) -> bool:
+    """The model judges context: skip cases with nothing from the client or an exact STOP."""
+    if any(f.kind == FindingKind.EXACT_OPT_OUT for f in findings):
+        return False
+    return has_client_text(timeline)
 
 
 def run_pipeline(config: Config, export: Export, reviewer: Reviewer | None = None) -> RunResult:
@@ -48,15 +55,11 @@ def run_pipeline(config: Config, export: Export, reviewer: Reviewer | None = Non
     for case_id, timeline in timelines.items():
         due = check_due(timeline.lead, snapshot.control_date, config.first_touch_delay_days)
         findings = analyse_history(timeline, config)
-        verdict = decide(timeline, due, findings, by_case.get(case_id, []))
-        if (
-            config.ai_review.enabled
-            and reviewer is not None
-            and verdict.decision == Decision.CONTACT_CANDIDATE
-        ):
-            outcome = review_candidate(timeline, reviewer, config.ai_review)
-            ai_outcomes[case_id] = outcome
-            verdict = apply_ai_outcome(verdict, outcome)
+        ai: AiOutcome | None = None
+        if config.ai_review.enabled and reviewer is not None and needs_ai_review(timeline, findings):
+            ai = review_case(timeline, reviewer, config.ai_review)
+            ai_outcomes[case_id] = ai
+        verdict = decide(timeline, due, findings, by_case.get(case_id, []), ai)
         draft, template_status = prepare_draft(timeline.lead, verdict.decision, config.templates)
         results.append(
             CaseResult(

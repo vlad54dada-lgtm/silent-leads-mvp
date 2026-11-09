@@ -1,0 +1,154 @@
+# Синтетичні діалоги для перевірки AI-аналізу контексту. ЖОДНОГО рядка з реальної вигрузки.
+# expected — мітка, яку поставила б уважна людина: none | opt_out | negative | unclear.
+# Запуск: uv run python -m silent_leads.cli ai-eval --config config.yaml --output data/output
+description: >
+  Регресійний набір для промпта: явні відписки в різних формулюваннях, STOP усередині фрази,
+  цитати службових текстів, відкладання, негатив, неоднозначні відповіді.
+cases:
+  # --- Відписки (opt_out) ---
+  - id: S01
+    expected: opt_out
+    note: Класична відписка словами, не ключовим словом
+    dialogue:
+      - {speaker: sales, text: "Hi! Following up on your window project. Still interested?"}
+      - {speaker: client, text: "Please stop texting me."}
+  - id: S02
+    expected: opt_out
+    note: Прохання прибрати зі списку
+    dialogue:
+      - {speaker: sales, text: "Good morning! We have an opening this week."}
+      - {speaker: client, text: "Take me off your list, thanks."}
+  - id: S03
+    expected: opt_out
+    note: Згода на пропозицію сейлза припинити контакт
+    dialogue:
+      - {speaker: sales, text: "Would you like us to stop reaching out?"}
+      - {speaker: client, text: "Yes please."}
+  - id: S04
+    expected: opt_out
+    note: Відписка у транскрипті дзвінка
+    dialogue:
+      - {speaker: sales, text: "Hi, this is the roofing team, do you have a minute?"}
+      - {speaker: client, text: "No. Don't call this number again."}
+  - id: S05
+    expected: opt_out
+    note: Ключове слово з доповненням — не точне STOP, але явна відписка
+    dialogue:
+      - {speaker: sales, text: "Quick reminder about your quote."}
+      - {speaker: client, text: "STOP. Unsubscribe me from everything."}
+  - id: S06
+    expected: opt_out
+    note: Ввічлива відписка без слова stop
+    dialogue:
+      - {speaker: sales, text: "Hello! Any update on the kitchen remodel?"}
+      - {speaker: client, text: "I'd prefer not to be contacted anymore. Thank you."}
+
+  # --- Негатив (negative) ---
+  - id: N01
+    expected: negative
+    dialogue:
+      - {speaker: sales, text: "Hi! Are you still looking to replace the siding?"}
+      - {speaker: client, text: "Not interested."}
+  - id: N02
+    expected: negative
+    dialogue:
+      - {speaker: sales, text: "Hi Alex, following up on the estimate."}
+      - {speaker: client, text: "Wrong number, I never asked for an estimate."}
+  - id: N03
+    expected: negative
+    dialogue:
+      - {speaker: sales, text: "Can we schedule the measurement?"}
+      - {speaker: client, text: "We already hired another company, sorry."}
+  - id: N04
+    expected: negative
+    dialogue:
+      - {speaker: sales, text: "Checking in on the bathroom project."}
+      - {speaker: client, text: "We decided not to do the project at all."}
+  - id: N05
+    expected: negative
+    note: Негатив у транскрипті
+    dialogue:
+      - {speaker: sales, text: "Hi, calling about the fence quote."}
+      - {speaker: client, text: "I told the last guy no. We're not doing it."}
+
+  # --- Немає відмови (none) ---
+  - id: C01
+    expected: none
+    note: Фраза stop by — не відписка
+    dialogue:
+      - {speaker: sales, text: "Can we send a technician this week?"}
+      - {speaker: client, text: "Sure, you can stop by Thursday after 5."}
+  - id: C02
+    expected: none
+    note: Клієнт цитує службовий текст оператора
+    dialogue:
+      - {speaker: sales, text: "Did you get our message yesterday?"}
+      - {speaker: client, text: "I got some text saying 'Reply STOP to opt out', was that you?"}
+  - id: C03
+    expected: none
+    note: Stop sending pictures — побажання щодо каналу, не відписка
+    dialogue:
+      - {speaker: sales, text: "Here are a few photos of similar projects."}
+      - {speaker: client, text: "Stop sending pictures, just call me tomorrow."}
+  - id: C04
+    expected: none
+    note: Відкладання
+    dialogue:
+      - {speaker: sales, text: "Ready to move forward with the quote?"}
+      - {speaker: client, text: "Not now, call me next month."}
+  - id: C05
+    expected: none
+    note: Питання про ціну
+    dialogue:
+      - {speaker: sales, text: "Your estimate is attached."}
+      - {speaker: client, text: "Is there any flexibility on the price?"}
+  - id: C06
+    expected: none
+    note: Фраза відписки в репліці сейлза, клієнт погоджується на контакт
+    dialogue:
+      - {speaker: sales, text: "Reply STOP to unsubscribe, or YES to keep getting updates."}
+      - {speaker: client, text: "Yes, keep me posted."}
+  - id: C07
+    expected: none
+    note: Nonstop — не слово stop
+    dialogue:
+      - {speaker: sales, text: "When is a good time to talk?"}
+      - {speaker: client, text: "It's been nonstop at work, maybe this weekend."}
+  - id: C08
+    expected: none
+    note: Коротка нейтральна відповідь
+    dialogue:
+      - {speaker: sales, text: "Hi! Sending the updated quote."}
+      - {speaker: client, text: "Ok thanks."}
+  - id: C09
+    expected: none
+    note: Клієнт просить не дзвонити, а писати — зміна каналу, не відписка
+    dialogue:
+      - {speaker: sales, text: "Tried calling you, no answer."}
+      - {speaker: client, text: "Don't call, I'm at work. Text me instead."}
+
+  # --- Неоднозначно (unclear) ---
+  - id: U01
+    expected: unclear
+    note: Саме лише "No" на відкрите питання
+    dialogue:
+      - {speaker: sales, text: "Hi! Are you available for a call today or should we text?"}
+      - {speaker: client, text: "No"}
+  - id: U02
+    expected: unclear
+    note: Вирішальне повідомлення приховане
+    dialogue:
+      - {speaker: sales, text: "Would you like us to stop contacting you?"}
+      - {speaker: client, hidden: true}
+  - id: U03
+    expected: unclear
+    note: Автор репліки невідомий
+    dialogue:
+      - {speaker: sales, text: "Hi, calling about your quote."}
+      - {speaker: unknown, text: "please stop"}
+  - id: U04
+    expected: unclear
+    note: Суперечливі сигнали
+    dialogue:
+      - {speaker: sales, text: "Can we schedule the visit?"}
+      - {speaker: client, text: "Leave me alone today... but send the quote again, I lost it."}

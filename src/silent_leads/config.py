@@ -46,12 +46,19 @@ class Templates(BaseModel):
 
 
 class Phrases(BaseModel):
-    """Lower-cased phrase lists matched against client utterances."""
+    """Phrase lists applied to what the client wrote (case-insensitive).
+
+    ``exact_opt_out`` is a RULE: a client message whose *whole* text is one of these words
+    (the US carrier opt-out keywords) blocks contact regardless of due date or context.
+    ``hints`` are NOT a rule: a hit only says the context must be judged — by the AI review
+    when it is enabled, otherwise by a human (``manual_review``). 'stop by our office' is a
+    hint that a human or the model will clear; the bare word 'STOP' is the rule.
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    opt_out: tuple[str, ...] = ()
-    negative: tuple[str, ...] = ()
+    exact_opt_out: tuple[str, ...] = ("stop", "unsubscribe")
+    hints: tuple[str, ...] = ()
 
 
 class ReviewTriggers(BaseModel):
@@ -62,15 +69,19 @@ class ReviewTriggers(BaseModel):
     contact_after_silent: bool = True
     hidden_inbound: bool = True
     no_client_text: bool = True
-    unknown_speaker_phrase: bool = True
+    # A phrase hint in a client/unknown-speaker utterance: manual_review when the AI review is
+    # off; with the AI review on, the model judges the context and the hint is only noted.
+    phrase_hint: bool = True
 
 
 class AiReview(BaseModel):
-    """Optional second-opinion pass over contact candidates by a Claude model.
+    """Context analysis of the dialogue by a Claude model.
 
     Off by default. Requires coordinator approval (recorded in docs/limitations.md).
-    The model sees only the client's own utterances and can only move a case
-    from contact_candidate to manual_review — never the other way.
+    With it on, every case that has readable client text (and no exact STOP) is sent to the
+    model, which labels the client's intent with a confidence. Only a high-confidence refusal
+    with evidence blocks contact; anything less certain goes to manual_review. The model never
+    makes a case a candidate by itself — due date and the other triggers still apply.
     """
 
     model_config = ConfigDict(frozen=True)

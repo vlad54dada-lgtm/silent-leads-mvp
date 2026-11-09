@@ -1,7 +1,11 @@
-"""Dialogue-history findings: opt-outs, negatives, post-silent contact, missing context.
+"""Dialogue-history findings: exact opt-out keyword, phrase hints, post-silent contact, missing context.
 
 Every finding carries the message ids that prove it; those ids always belong to the
 case being analysed because they come from its own timeline.
+
+Only one text rule decides on its own: a client message that *is* an opt-out keyword
+(STOP / UNSUBSCRIBE — the US carrier standard). Every other wording is context, judged by
+the AI review or by a human; here it is only flagged as a hint.
 """
 
 from __future__ import annotations
@@ -11,14 +15,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from silent_leads.config import Config
-from silent_leads.models import ContentState, Direction
+from silent_leads.models import ContentState, Direction, Message
 from silent_leads.timeline import CaseTimeline, Speaker, Utterance
 
 
 class FindingKind(StrEnum):
-    OPT_OUT = "opt_out"  # client asked not to be contacted -> do_not_contact
-    NEGATIVE = "negative"  # unambiguous client negative -> do_not_contact
-    PHRASE_UNKNOWN_SPEAKER = "phrase_unknown_speaker"  # key phrase, speaker unclear -> review
+    EXACT_OPT_OUT = "exact_opt_out"  # whole client message is STOP/UNSUBSCRIBE -> do_not_contact
+    PHRASE_HINT = "phrase_hint"  # key phrase in client/unknown text -> context must be judged
     CONTACT_AFTER_SILENT = "contact_after_silent"  # any event after silent_since -> review
     HIDDEN_INBOUND = "hidden_inbound"  # client message with withheld text -> review
     NO_CLIENT_TEXT = "no_client_text"  # nothing the client said is readable -> review
@@ -33,10 +36,25 @@ class Finding:
 
 
 _APOSTROPHES = str.maketrans({"’": "'", "‘": "'", "`": "'"})
+_EDGE_PUNCTUATION = " \t\r\n.!?,;:\"'()[]«»"
 
 
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.translate(_APOSTROPHES).lower()).strip()
+
+
+def normalize_whole_message(text: str) -> str:
+    """Lower-case the whole text and drop surrounding punctuation: 'STOP.' -> 'stop'."""
+    return _normalize(text).strip(_EDGE_PUNCTUATION)
+
+
+def is_exact_opt_out(message: Message, keywords: tuple[str, ...]) -> bool:
+    """The rule: an inbound message whose entire text is one opt-out keyword."""
+    if message.direction != Direction.INBOUND or not message.has_text:
+        return False
+    assert message.text is not None
+    normalized = {normalize_whole_message(k) for k in keywords} - {""}
+    return normalize_whole_message(message.text) in normalized
 
 
 def _compile(phrases: tuple[str, ...]) -> list[tuple[str, re.Pattern[str]]]:
@@ -75,49 +93,51 @@ def _phrases_text(pairs: list[tuple[str, str]]) -> str:
     return ", ".join(f"'{p}'" for p in phrases)
 
 
+def has_client_text(timeline: CaseTimeline) -> bool:
+    return any(u.speaker == Speaker.CLIENT and u.text.strip() for u in timeline.utterances())
+
+
 def analyse_history(timeline: CaseTimeline, config: Config) -> list[Finding]:
     findings: list[Finding] = []
     utterances = timeline.utterances()
-    opt_out = _compile(config.phrases.opt_out)
-    negative = _compile(config.phrases.negative)
 
-    opt_hits = _match_phrases(utterances, opt_out)
-    neg_hits = _match_phrases(utterances, negative)
-
-    if opt_hits[Speaker.CLIENT]:
+    exact = [m for m in timeline.messages if is_exact_opt_out(m, config.phrases.exact_opt_out)]
+    if exact:
+        words = sorted({normalize_whole_message(m.text or "").upper() for m in exact})
         findings.append(
             Finding(
-                FindingKind.OPT_OUT,
-                _unique_ids(opt_hits[Speaker.CLIENT]),
-                f"клієнт просив припинити контакт: {_phrases_text(opt_hits[Speaker.CLIENT])}",
+                FindingKind.EXACT_OPT_OUT,
+                tuple(m.message_id for m in exact),
+                f"офіційна відписка: повідомлення клієнта складається з ключового слова {', '.join(words)}",
             )
         )
-    if neg_hits[Speaker.CLIENT]:
+
+    hint_hits = _match_phrases(utterances, _compile(config.phrases.hints))
+    client_pairs = hint_hits[Speaker.CLIENT]
+    unknown_pairs = hint_hits[Speaker.UNKNOWN]
+    if (client_pairs or unknown_pairs) and config.review.phrase_hint:
+        who = []
+        if client_pairs:
+            who.append("клієнт")
+        if unknown_pairs:
+            who.append("невизначений автор")
         findings.append(
             Finding(
-                FindingKind.NEGATIVE,
-                _unique_ids(neg_hits[Speaker.CLIENT]),
-                f"однозначний негатив від клієнта: {_phrases_text(neg_hits[Speaker.CLIENT])}",
-            )
-        )
-    unknown_pairs = opt_hits[Speaker.UNKNOWN] + neg_hits[Speaker.UNKNOWN]
-    if unknown_pairs and config.review.unknown_speaker_phrase:
-        findings.append(
-            Finding(
-                FindingKind.PHRASE_UNKNOWN_SPEAKER,
-                _unique_ids(unknown_pairs),
-                f"ключова фраза в репліці з невизначеним автором: {_phrases_text(unknown_pairs)}",
+                FindingKind.PHRASE_HINT,
+                _unique_ids(client_pairs + unknown_pairs),
+                f"фраза потребує оцінки контексту: {_phrases_text(client_pairs + unknown_pairs)} "
+                f"({', '.join(who)})",
             )
         )
 
     after = timeline.after_silent
     if after and config.review.contact_after_silent:
-        who = sorted({m.direction.value if m.direction else "?" for m in after})
+        who_dir = sorted({m.direction.value if m.direction else "?" for m in after})
         findings.append(
             Finding(
                 FindingKind.CONTACT_AFTER_SILENT,
                 tuple(m.message_id for m in after),
-                f"{len(after)} под. після переходу в silent ({', '.join(who)}) — "
+                f"{len(after)} под. після переходу в silent ({', '.join(who_dir)}) — "
                 "статус silent може бути неактуальним",
             )
         )
@@ -149,8 +169,7 @@ def analyse_history(timeline: CaseTimeline, config: Config) -> list[Finding]:
             )
         )
 
-    client_said_something = any(u.speaker == Speaker.CLIENT and u.text for u in utterances)
-    if not client_said_something and config.review.no_client_text:
+    if not has_client_text(timeline) and config.review.no_client_text:
         inbound_ids = tuple(m.message_id for m in timeline.messages if m.direction == Direction.INBOUND)
         findings.append(
             Finding(

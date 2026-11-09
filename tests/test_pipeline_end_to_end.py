@@ -20,7 +20,7 @@ from silent_leads.summary import build_summary, render_summary_markdown
 from tests.conftest import build_workbook, lead, message
 
 CONFIG = Config(
-    phrases=Phrases(opt_out=("stop",), negative=("not interested",)),
+    phrases=Phrases(exact_opt_out=("stop",), hints=("not interested",)),
     templates=Templates(
         with_quote=Template(text="[TEST] quote follow-up", status=TemplateStatus.TEST_TEMPLATE),
         without_quote=Template(text="", status=TemplateStatus.TEMPLATE_MISSING),
@@ -103,7 +103,9 @@ def test_outputs_are_written_and_rerun_is_byte_identical(workbook_path: Path, tm
     summary = build_summary(CONFIG, run)
     out = tmp_path / "out"
 
-    first = write_outputs(out, run.results, run.issues, summary, render_summary_markdown(summary))
+    first = write_outputs(
+        out, run.results, run.issues, summary, render_summary_markdown(summary), run.ai_outcomes
+    )
     snapshot1 = {p.name: p.read_bytes() for p in first}
 
     # second run on the same input/config, later than the 2-second zip timestamp granularity
@@ -114,7 +116,14 @@ def test_outputs_are_written_and_rerun_is_byte_identical(workbook_path: Path, tm
     snapshot2 = {p.name: p.read_bytes() for p in second}
 
     assert snapshot1 == snapshot2
-    assert set(snapshot1) == {"results.xlsx", "results.csv", "data_issues.csv", "summary.json", "summary.md"}
+    assert set(snapshot1) == {
+        "results.xlsx",
+        "results.csv",
+        "data_issues.csv",
+        "ai_labels.csv",
+        "summary.json",
+        "summary.md",
+    }
 
     with (out / "results.csv").open(encoding="utf-8-sig", newline="") as fh:
         rows = list(csv.DictReader(fh))
@@ -143,7 +152,9 @@ def test_outputs_are_written_and_rerun_is_byte_identical(workbook_path: Path, tm
 def test_cli_run_and_validate(workbook_path: Path, tmp_path: Path) -> None:
     _build(workbook_path)
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("first_touch_delay_days: 7\nphrases:\n  opt_out: ['stop']\n", encoding="utf-8")
+    config_path.write_text(
+        "first_touch_delay_days: 7\nphrases:\n  exact_opt_out: ['stop']\n", encoding="utf-8"
+    )
     runner = CliRunner()
 
     result = runner.invoke(app, ["validate", "--input", str(workbook_path), "--config", str(config_path)])

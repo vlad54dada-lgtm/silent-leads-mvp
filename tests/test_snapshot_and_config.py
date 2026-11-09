@@ -54,7 +54,9 @@ def test_config_defaults_are_safe_and_example_loads(tmp_path: Path) -> None:
 
     example = load_config(Path(__file__).resolve().parents[1] / "config.example.yaml")
     assert example.templates.without_quote.status == TemplateStatus.TEMPLATE_MISSING
-    assert "stop" in example.phrases.opt_out
+    assert example.phrases.exact_opt_out == ("stop", "unsubscribe")
+    assert "stop by" not in example.phrases.hints and "not interested" in example.phrases.hints
+    assert example.ai_review.enabled is False  # the example never turns the external call on
 
     with pytest.raises(ValidationError):
         Config(crm_timezone="Mars/Olympus")
