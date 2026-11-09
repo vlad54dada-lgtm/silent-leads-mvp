@@ -201,3 +201,14 @@ def test_pipeline_without_ai_sends_hints_to_manual_review(workbook_path: Path) -
     decisions = {r.case_id: r.decision for r in run.results}
     assert decisions == {"L1": Decision.MANUAL_REVIEW, "L2": Decision.CONTACT_CANDIDATE}
     assert run.ai_outcomes == {}
+
+
+def test_reviewer_returning_a_wrong_type_becomes_an_error_outcome_not_a_crash() -> None:
+    class BrokenReviewer:
+        def assess(self, case_id: str, payload: str) -> AiAssessment:
+            return {"label": "none"}  # type: ignore[return-value]
+
+    outcome = review_case(_timeline(), BrokenReviewer(), AiReview())
+    assert outcome.error is not None
+    assert "AiAssessment" in outcome.error
+    assert outcome.needs_review

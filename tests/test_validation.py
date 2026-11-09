@@ -29,6 +29,15 @@ def test_control_sheet_mismatch_is_reported(workbook_path: Path) -> None:
     assert any(m.startswith("message_rows:") for m in mismatches)
 
 
+def test_control_sheet_missing_row_is_reported_not_skipped(workbook_path: Path) -> None:
+    build_workbook(workbook_path, [lead("L1")], [message("L1", "L1-M1")])
+    export = read_export(workbook_path)
+    export.control.pop("withheld_hidden")
+    mismatches = check_control_sheet(export)
+    assert len(mismatches) == 1
+    assert mismatches[0].startswith("withheld_hidden:")
+
+
 def test_orphan_message_and_lead_without_history(workbook_path: Path) -> None:
     build_workbook(workbook_path, [lead("L1")], [message("L9", "L9-M1")], auto_counters=False)
     export = read_export(workbook_path)
@@ -63,3 +72,15 @@ def test_duplicate_ids_are_errors(workbook_path: Path) -> None:
     codes = {i.code for i in validate_links(export)}
     assert "lead_duplicate_case_id" in codes
     assert "message_duplicate_id" in codes
+
+
+def test_duplicate_message_id_flags_every_affected_case(workbook_path: Path) -> None:
+    build_workbook(
+        workbook_path,
+        [lead("L1"), lead("L2")],
+        [message("L1", "M-SHARED"), message("L2", "M-SHARED")],
+        auto_counters=False,
+    )
+    duplicates = [i for i in validate_links(read_export(workbook_path)) if i.code == "message_duplicate_id"]
+    assert sorted(i.case_id for i in duplicates if i.case_id) == ["L1", "L2"]
+    assert all(i.level == IssueLevel.ERROR for i in duplicates)

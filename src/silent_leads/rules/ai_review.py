@@ -75,8 +75,17 @@ class AiOutcome:
 
     @property
     def clears(self) -> bool:
-        """The model is sure there is no refusal; the case may proceed to the due-date rules."""
-        return self.error is None and self.label == AiLabel.NONE and self.confidence == AiConfidence.HIGH
+        """The model is sure there is no refusal AND saw the whole dialogue -> due-date rules apply.
+
+        A truncated payload hides the oldest turns, where an early refusal may sit; a verdict on
+        the tail alone never clears a case.
+        """
+        return (
+            self.error is None
+            and self.label == AiLabel.NONE
+            and self.confidence == AiConfidence.HIGH
+            and not self.truncated
+        )
 
     @property
     def needs_review(self) -> bool:
@@ -139,9 +148,11 @@ def dialogue_items(timeline: CaseTimeline) -> list[DialogueItem]:
                         }
                     )
         elif message.content_state == ContentState.WITHHELD_HIDDEN:
-            speaker = {Direction.INBOUND: Speaker.CLIENT, Direction.OUTBOUND: Speaker.SALES}.get(
-                message.direction or Direction.OUTBOUND, Speaker.UNKNOWN
-            )
+            speaker = Speaker.UNKNOWN  # an unknown direction must not be shown to the model as "sales"
+            if message.direction == Direction.INBOUND:
+                speaker = Speaker.CLIENT
+            elif message.direction == Direction.OUTBOUND:
+                speaker = Speaker.SALES
             items.append({"message_id": message.message_id, "speaker": speaker.value, "hidden": True})
     return items
 
@@ -176,7 +187,13 @@ def review_payload(
 ) -> AiOutcome:
     """Ask the reviewer about one payload. Never raises: failures become an outcome with ``error``."""
     try:
-        assessment = reviewer.assess(case_id, payload)
+        returned: object = reviewer.assess(case_id, payload)  # a faulty reviewer may return anything
+        if not isinstance(returned, AiAssessment):
+            msg = f"reviewer returned {type(returned).__name__}, not AiAssessment"
+            raise TypeError(msg)
+        assessment = returned
+        evidence = tuple(dict.fromkeys(mid for mid in assessment.evidence_message_ids if mid in own_ids))
+        explanation = assessment.explanation.strip()
     except Exception as exc:
         return AiOutcome(
             model=settings.model,
@@ -187,13 +204,12 @@ def review_payload(
             error=f"{type(exc).__name__}: {exc}"[:300],
             truncated=truncated,
         )
-    evidence = tuple(dict.fromkeys(mid for mid in assessment.evidence_message_ids if mid in own_ids))
     return AiOutcome(
         model=settings.model,
         label=assessment.label,
         confidence=assessment.confidence,
         evidence_message_ids=evidence,
-        explanation=assessment.explanation.strip(),
+        explanation=explanation,
         truncated=truncated,
     )
 
@@ -211,7 +227,7 @@ def parse_assessment_text(text: str) -> AiAssessment:
     """Validate a plain-text model answer against the schema. Raises on anything else."""
     match = _JSON_OBJECT_RE.search(text)
     if match is None:
-        msg = "відповідь моделі не містить JSON-обʼєкта"
+        msg = "відповідь моделі не містить JSON-об'єкта"
         raise ValueError(msg)
     return AiAssessment.model_validate_json(match.group(0))
 

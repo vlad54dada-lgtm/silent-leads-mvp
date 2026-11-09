@@ -320,3 +320,79 @@ def test_evidence_from_another_case_is_a_hard_error() -> None:
     foreign = Finding(FindingKind.EXACT_OPT_OUT, ("L2-M1",), "leaked")
     with pytest.raises(EvidenceLeakError):
         decide(timeline, check_due(timeline.lead, CONTROL, 7), [foreign], [])
+
+
+def test_inbound_call_without_text_is_manual_review_unless_disabled() -> None:
+    call = _msg("M2", "2026-10-03 09:00:00", direction=Direction.INBOUND, text=None, event_type="CALL")
+    timeline = _timeline([SALES_HELLO, CLIENT_OK, call])
+
+    verdict = _verdict(timeline)
+    assert verdict.decision == Decision.MANUAL_REVIEW
+    assert "M2" in verdict.evidence_message_ids
+    assert FindingKind.INBOUND_WITHOUT_TEXT in {f.kind for f in analyse_history(timeline, CONFIG)}
+
+    relaxed = CONFIG.model_copy(update={"review": ReviewTriggers(inbound_without_text=False)})
+    assert _verdict(timeline, config=relaxed).decision == Decision.CONTACT_CANDIDATE
+
+
+def test_hidden_message_with_unknown_direction_still_counts_as_hidden_inbound() -> None:
+    hidden = Message(
+        case_id="L1",
+        message_id="M2",
+        occurred_at_crm=datetime.fromisoformat("2026-10-03 09:00:00"),
+        event_type="SMS",
+        direction=None,
+        role=None,
+        call_result=None,
+        call_seconds=None,
+        content_state=ContentState.WITHHELD_HIDDEN,
+        text=None,
+    )
+    verdict = _verdict(_timeline([SALES_HELLO, CLIENT_OK, hidden]))
+    assert verdict.decision == Decision.MANUAL_REVIEW
+    assert "M2" in verdict.evidence_message_ids
+
+
+def test_unknown_speaker_without_a_hint_phrase_is_manual_review() -> None:
+    call = _msg(
+        "M2",
+        "2026-10-03 09:00:00",
+        direction=Direction.OUTBOUND,
+        event_type="CALL",
+        text="I never asked for this, leave me be",  # no (C)/(S) tags, no phrase from the hint list
+    )
+    timeline = _timeline([SALES_HELLO, CLIENT_OK, call])
+    verdict = _verdict(timeline)
+    assert verdict.decision == Decision.MANUAL_REVIEW
+    assert FindingKind.UNKNOWN_SPEAKER in {f.kind for f in analyse_history(timeline, CONFIG)}
+
+    relaxed = CONFIG.model_copy(update={"review": ReviewTriggers(unknown_speaker=False)})
+    assert _verdict(timeline, config=relaxed).decision == Decision.CONTACT_CANDIDATE
+
+
+def test_ai_none_high_on_truncated_input_does_not_clear_a_hint() -> None:
+    early_refusal = _msg(
+        "M2", "2026-10-01 12:00:00", direction=Direction.INBOUND, text="Please do not text me"
+    )
+    timeline = _timeline([SALES_HELLO, early_refusal, CLIENT_OK])
+
+    def outcome(truncated: bool) -> AiOutcome:
+        return AiOutcome(
+            model="test-model",
+            label=AiLabel.NONE,
+            confidence=AiConfidence.HIGH,
+            evidence_message_ids=(),
+            explanation="бачила лише хвіст",
+            truncated=truncated,
+        )
+
+    assert outcome(True).clears is False
+    assert _verdict(timeline, ai=outcome(True)).decision == Decision.MANUAL_REVIEW
+    assert _verdict(timeline, ai=outcome(False)).decision == Decision.CONTACT_CANDIDATE
+
+
+@pytest.mark.parametrize("disguised", ["ＳＴＯＰ", "st\u200bop", "STOP\u200b.", "\ufeffUnsubscribe"])
+def test_exact_stop_survives_unicode_disguises(disguised: str) -> None:
+    message = _msg("M2", "2026-10-03 09:00:00", direction=Direction.INBOUND, text=disguised)
+    assert is_exact_opt_out(message, CONFIG.phrases.exact_opt_out)
+    assert _verdict(_timeline([SALES_HELLO, message])).decision == Decision.DO_NOT_CONTACT

@@ -109,3 +109,32 @@ def test_transcript_lines_use_speaker_tags_not_direction() -> None:
 def test_hidden_or_empty_messages_yield_no_utterances() -> None:
     assert split_utterances(_msg("M1", "2026-10-01 09:00:00", text=None)) == []
     assert split_utterances(_msg("M2", "2026-10-01 09:00:00", text="   ")) == []
+
+
+def test_call_transcript_without_speaker_tags_is_unknown_as_a_whole() -> None:
+    call = _msg(
+        "M1",
+        "2026-10-02 09:00:00",
+        direction=Direction.OUTBOUND,
+        event_type="CALL",
+        text="Hi, this is the team about your quote.\nDon't call me again, I'm not interested.",
+    )
+    utterances = split_utterances(call)
+    assert [u.speaker for u in utterances] == [Speaker.UNKNOWN]  # never silently "sales"
+
+
+def test_speaker_tags_are_case_insensitive() -> None:
+    call = _msg(
+        "M1",
+        "2026-10-02 09:00:00",
+        event_type="CALL",
+        text="[СПІВРОБІТНИК] (s): Hello?\nKate (c): Please stop calling me",
+    )
+    assert [u.speaker for u in split_utterances(call)] == [Speaker.SALES, Speaker.CLIENT]
+
+
+def test_tags_inside_an_sms_do_not_reattribute_the_client() -> None:
+    sms = _msg("M1", "2026-10-02 09:00:00", direction=Direction.INBOUND, event_type="SMS", text="(S): STOP")
+    [utterance] = split_utterances(sms)
+    assert utterance.speaker == Speaker.CLIENT
+    assert utterance.text == "(S): STOP"

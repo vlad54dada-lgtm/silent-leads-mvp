@@ -45,6 +45,7 @@ def check_control_sheet(export: Export) -> list[str]:
     ):
         declared = export.control.get(key)
         if declared is None:
+            mismatches.append(f"{key}: у «Контроль» немає такого рядка (прочитано = {value})")
             continue
         try:
             declared_int = int(float(declared))
@@ -72,17 +73,23 @@ def validate_links(export: Export) -> list[DataIssue]:
                 )
             )
 
-    message_ids = Counter(m.message_id for m in export.messages)
-    for message_id, count in message_ids.items():
+    cases_by_message: dict[str, set[str]] = {}
+    for m in export.messages:
+        cases_by_message.setdefault(m.message_id, set()).add(m.case_id)
+    for message_id, cases in sorted(cases_by_message.items()):
+        count = sum(1 for m in export.messages if m.message_id == message_id)
         if count > 1:
-            issues.append(
-                DataIssue(
-                    level=IssueLevel.ERROR,
-                    code="message_duplicate_id",
-                    detail=f"message_id зустрічається {count} разів у різних кейсах",
-                    message_id=message_id,
+            # One issue per affected case, so every case that shares the id goes to manual_review.
+            for case_id in sorted(cases):
+                issues.append(
+                    DataIssue(
+                        level=IssueLevel.ERROR,
+                        code="message_duplicate_id",
+                        detail=f"message_id зустрічається {count} разів у {len(cases)} кейс.",
+                        case_id=case_id,
+                        message_id=message_id,
+                    )
                 )
-            )
 
     known = set(lead_ids)
     per_case = Counter(m.case_id for m in export.messages)

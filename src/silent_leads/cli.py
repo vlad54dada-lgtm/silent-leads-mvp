@@ -1,7 +1,7 @@
 """Command-line entry point.
 
 ``validate``  check the export;  ``run``  full pipeline;
-``evaluate``  compare human labels with AI labels (ai_labels.csv);
+``evaluate-labels``  compare human labels with AI labels (ai_labels.csv);
 ``ai-eval``   run the AI context analysis over synthetic dialogues with known labels.
 """
 
@@ -33,7 +33,7 @@ EXIT_SNAPSHOT = 4
 EXIT_AI_DISABLED = 5
 
 INPUT_OPTION = typer.Option(..., "--input", "-i", exists=True, dir_okay=False, help="Файл вигрузки .xlsx")
-CONFIG_OPTION = typer.Option(None, "--config", "-c", exists=True, dir_okay=False, help="config.yaml")
+CONFIG_OPTION = typer.Option(..., "--config", "-c", exists=True, dir_okay=False, help="config.yaml")
 OUTPUT_OPTION = typer.Option(Path("data/output"), "--output", "-o", file_okay=False, help="Папка результатів")
 LABELS_OPTION = typer.Option(
     ..., "--labels", "-l", exists=True, dir_okay=False, help="ai_labels.csv із заповненою human_label"
@@ -52,9 +52,9 @@ def _root() -> None:
     """Silent Leads Retouch MVP — офлайн-обробка вигрузки silent-лідів."""
 
 
-def _load_config(path: Path | None) -> Config:
-    if path is None:
-        return Config()
+def _load_config(path: Path) -> Config:
+    # Always explicit: the bare Config() has no phrase hints, which would silently weaken the
+    # offline rules. The example config is the documented baseline.
     return load_config(path)
 
 
@@ -77,7 +77,7 @@ def _read_checked(input_path: Path, config: Config) -> Export:
 @app.command()
 def validate(
     input_path: Path = INPUT_OPTION,
-    config_path: Path | None = CONFIG_OPTION,
+    config_path: Path = CONFIG_OPTION,
 ) -> None:
     """Прочитати вигрузку, звірити контрольні суми і показати знайдені проблеми даних."""
     config = _load_config(config_path)
@@ -113,7 +113,7 @@ def validate(
 @app.command()
 def run(
     input_path: Path = INPUT_OPTION,
-    config_path: Path | None = CONFIG_OPTION,
+    config_path: Path = CONFIG_OPTION,
     output_dir: Path = OUTPUT_OPTION,
 ) -> None:
     """Повний прогін: рішення по кожному кейсу, results.xlsx/csv, data_issues.csv, ai_labels.csv, summary."""
@@ -180,7 +180,7 @@ def evaluate_labels(
 @app.command()
 def ai_eval(
     cases_path: Path = CASES_OPTION,
-    config_path: Path | None = CONFIG_OPTION,
+    config_path: Path = CONFIG_OPTION,
     output_dir: Path = OUTPUT_OPTION,
 ) -> None:
     """Прогнати AI-аналіз по синтетичних діалогах з відомими мітками (регресія промпта)."""

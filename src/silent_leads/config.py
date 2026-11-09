@@ -69,6 +69,12 @@ class ReviewTriggers(BaseModel):
     contact_after_silent: bool = True
     hidden_inbound: bool = True
     no_client_text: bool = True
+    # An inbound event with no readable text that is not marked withheld (a call without a
+    # transcript, an empty text, an unknown content_state): the client said something we cannot read.
+    inbound_without_text: bool = True
+    # A transcript line whose author could not be determined (no (C)/(S) marker): it may be the
+    # client refusing — never a positive decision without a human.
+    unknown_speaker: bool = True
     # A phrase hint in a client/unknown-speaker utterance: manual_review when the AI review is
     # off; with the AI review on, the model judges the context and the hint is only noted.
     phrase_hint: bool = True
@@ -87,7 +93,7 @@ class AiReview(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = False
-    model: str = "claude-opus-5-5"
+    model: str = "claude-sonnet-5-5"
     max_input_chars: int = Field(default=20000, ge=500)
     # None -> api.anthropic.com. An Anthropic-compatible gateway (e.g. https://openrouter.ai/api)
     # adds a third party that sees client texts; record its approval in docs/limitations.md.

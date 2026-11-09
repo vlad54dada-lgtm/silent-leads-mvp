@@ -120,3 +120,19 @@ def test_missing_sheet_or_column_is_a_format_error(tmp_path: Path, workbook_path
     wb.save(workbook_path)
     with pytest.raises(ExportFormatError, match="Ліди"):
         read_export(workbook_path)
+
+
+def test_incomplete_inbound_multipart_is_an_error_not_a_warning(workbook_path: Path) -> None:
+    build_workbook(
+        workbook_path,
+        [lead("L1")],
+        [
+            message(
+                "L1", "L1-M1", direction="INBOUND", text_part="1/2", text="only half of what the client said"
+            )
+        ],
+    )
+    export = read_export(workbook_path)
+    issue = next(i for i in export.issues if i.code == "message_incomplete_parts")
+    assert issue.level == IssueLevel.ERROR
+    assert issue.case_id == "L1"

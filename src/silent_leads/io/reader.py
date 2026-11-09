@@ -340,9 +340,11 @@ def _merge_parts(rows: list[tuple[int, RawRow]], issues: list[DataIssue]) -> Mes
     parts.sort(key=lambda p: p[0])
     expected = expected or 1
     if len(parts) != expected or [p[0] for p in parts] != list(range(1, expected + 1)):
+        # A client message with a missing part may hide the refusal: error (-> manual_review).
+        inbound = (_s(first.get("direction")) or "").upper() == Direction.INBOUND.value
         issues.append(
             DataIssue(
-                level=IssueLevel.WARNING,
+                level=IssueLevel.ERROR if inbound else IssueLevel.WARNING,
                 code="message_incomplete_parts",
                 detail=f"знайдено {len(parts)} частин з {expected}; текст може бути неповним",
                 case_id=case_id,

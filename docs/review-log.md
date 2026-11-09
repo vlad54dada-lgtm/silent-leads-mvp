@@ -19,12 +19,12 @@
 
 | case_id | Haiku | Sonnet | Opus | Коментар |
 |---|---|---|---|---|
-| L015 | negative/high | negative/high | negative/high | Усі три: клієнт відмовився; списки фраз цього не ловили. Перевірити людиною |
-| L026 | negative/high | negative/high | negative/medium | Усі три: клієнт зробив роботу інакше; Opus менш упевнений → у нього `manual_review` |
-| L001, L016, L050 | none/high | none/high | none/high | Списки фраз бачили «stop» / «not interested» і блокували; за контекстом відмови немає |
-| L014 | unclear/medium | none/medium | none/medium | Слово «stop» у репліці клієнта; усі три не впевнені → `manual_review` |
+| L015 | negative/high | negative/high | negative/high | Усі три: негатив; списки фраз цього не ловили. Перевірити людиною |
+| L026 | negative/high | negative/high | negative/medium | Усі три: негатив; Opus менш упевнений → у нього `manual_review` |
+| L001, L016, L050 | none/high | none/high | none/high | Списки фраз спрацьовували і блокували; за контекстом відмови немає |
+| L014 | unclear/medium | none/medium | none/medium | Фраза-підказка в репліці клієнта; усі три не впевнені → `manual_review` |
 | L017 | unclear/medium | none/high | none/medium | Те саме; лише Sonnet упевнений |
-| L019 | none/high | none/high | none/medium | «don't need» у контексті не є відмовою за всіма трьома |
+| L019 | none/high | none/high | none/medium | Фраза-підказка в контексті не є відмовою за всіма трьома |
 | L009 | unclear/medium | none/medium | none/medium | Розбіжність лише Haiku; усі → `manual_review` |
 | L002, L011, L022, L033 | none/medium | none/high | none/high | Haiku менш упевнений → `manual_review` замість кандидата |
 | L008, L013, L036, L049 | none/high | none/high | none/medium | Opus менш упевнений; рішення не змінилось (інші тригери) |
@@ -34,8 +34,8 @@
 - Рішення: за замовчуванням `claude-sonnet-5.5` (ті самі мітки, що в Opus, удвічі дешевше, найменше ручних
   перевірок). Haiku — для великих обсягів після підтвердження точності на більшій вибірці.
 - Зміни: `evals/context_cases.yaml` U04 → `none`; `config.example.yaml` модель → Sonnet 5.5.
-- Відкриті питання для людини: чи справді L015 і L026 є негативом (обидва заблоковані AI); чи 6 кейсів зі словами
-  «stop»/«not interested»/«don't need» справді не є відписками (AI каже «ні» для всіх).
+- Відкриті питання для людини: чи справді L015 і L026 є негативом (обидва заблоковані AI); чи 6 кейсів
+  із фразами-підказками справді не є відписками (AI каже «ні» для всіх). Зміст реплік — у `ai_labels.csv` локально.
 
 ## Сесія 1 — (дата), учасники: (хто)
 

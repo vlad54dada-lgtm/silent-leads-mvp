@@ -15,6 +15,8 @@ _REVIEW = {
     FindingKind.CONTACT_AFTER_SILENT,
     FindingKind.HIDDEN_INBOUND,
     FindingKind.NO_CLIENT_TEXT,
+    FindingKind.INBOUND_WITHOUT_TEXT,
+    FindingKind.UNKNOWN_SPEAKER,
 }
 
 _LABEL_TEXT = {

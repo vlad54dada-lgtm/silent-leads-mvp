@@ -9,8 +9,9 @@ from enum import StrEnum
 
 from silent_leads.models import Direction, Lead, Message
 
-# "Kathleen (C): Hello?"  /  "[СПІВРОБІТНИК] (S): Hello, ..."
-_SPEAKER_LINE = re.compile(r"^\s*(?P<name>[^\n:]*?)\s*\((?P<tag>[CS])\)\s*:\s*(?P<text>.*)$")
+# "Kathleen (C): Hello?"  /  "[СПІВРОБІТНИК] (S): Hello, ..."  (tags are case-insensitive)
+_SPEAKER_LINE = re.compile(r"^\s*(?P<name>[^\n:]*?)\s*\((?P<tag>[CS])\)\s*:\s*(?P<text>.*)$", re.IGNORECASE)
+CALL_EVENT = "CALL"
 
 
 class Speaker(StrEnum):
@@ -32,18 +33,21 @@ def split_utterances(message: Message) -> list[Utterance]:
 
     Call transcripts carry ``(C)`` / ``(S)`` tags per line; those win over the channel
     ``direction``. A line without a tag inside a transcript that otherwise has tags is
-    ``UNKNOWN`` — it may be a quote, a system line or a mis-split fragment.
-    SMS/MMS text has no tags: the whole text belongs to the channel direction.
+    ``UNKNOWN`` — it may be a quote, a system line or a mis-split fragment. A call
+    transcript with no tags at all is ``UNKNOWN`` as a whole: both parties spoke and nothing
+    tells them apart. Tags are honoured only in CALL events; SMS/MMS text has no tags and
+    belongs to the channel direction, even if it happens to contain ``(S):``.
     """
     if not message.has_text:
         return []
     assert message.text is not None  # for the type checker; has_text guarantees it
     lines = [line for line in message.text.splitlines() if line.strip()]
-    tagged = [(_SPEAKER_LINE.match(line), line) for line in lines]
+    is_call = (message.event_type or "").strip().upper() == CALL_EVENT
+    tagged = [(_SPEAKER_LINE.match(line) if is_call else None, line) for line in lines]
     has_tags = any(m is not None for m, _ in tagged)
 
     if not has_tags:
-        speaker = _speaker_from_direction(message.direction)
+        speaker = Speaker.UNKNOWN if is_call else _speaker_from_direction(message.direction)
         return [Utterance(message.message_id, speaker, message.text.strip(), message.occurred_at_crm)]
 
     result: list[Utterance] = []
@@ -53,7 +57,7 @@ def split_utterances(message: Message) -> list[Utterance]:
                 Utterance(message.message_id, Speaker.UNKNOWN, line.strip(), message.occurred_at_crm)
             )
             continue
-        speaker = Speaker.CLIENT if match.group("tag") == "C" else Speaker.SALES
+        speaker = Speaker.CLIENT if match.group("tag").upper() == "C" else Speaker.SALES
         result.append(
             Utterance(message.message_id, speaker, match.group("text").strip(), message.occurred_at_crm)
         )

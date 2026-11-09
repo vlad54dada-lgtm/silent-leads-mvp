@@ -23,6 +23,8 @@ from silent_leads.rules.ai_review import AiAssessment, AiConfidence, AiLabel
 from silent_leads.timeline import Speaker
 from tests.test_ai_review import FakeReviewer
 
+EXAMPLE_CONFIG = Path(__file__).resolve().parents[1] / "config.example.yaml"
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -174,5 +176,7 @@ def test_duplicate_eval_ids_are_rejected(tmp_path: Path) -> None:
 
 
 def test_cli_ai_eval_refuses_when_ai_disabled(tmp_path: Path) -> None:
-    result = CliRunner().invoke(app, ["ai-eval", "--output", str(tmp_path / "o")])
+    result = CliRunner().invoke(
+        app, ["ai-eval", "--config", str(EXAMPLE_CONFIG), "--output", str(tmp_path / "o")]
+    )
     assert result.exit_code == 5

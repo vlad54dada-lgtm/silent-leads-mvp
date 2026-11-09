@@ -19,6 +19,8 @@ from silent_leads.pipeline import run_pipeline
 from silent_leads.summary import build_summary, render_summary_markdown
 from tests.conftest import build_workbook, lead, message
 
+EXAMPLE_CONFIG = Path(__file__).resolve().parents[1] / "config.example.yaml"
+
 CONFIG = Config(
     phrases=Phrases(exact_opt_out=("stop",), hints=("not interested",)),
     templates=Templates(
@@ -172,6 +174,25 @@ def test_cli_run_and_validate(workbook_path: Path, tmp_path: Path) -> None:
 
 def test_cli_stops_on_checksum_mismatch(workbook_path: Path, tmp_path: Path) -> None:
     build_workbook(workbook_path, [lead("L1")], [message("L1", "L1-M1")], control={"cases": 99})
-    result = CliRunner().invoke(app, ["run", "--input", str(workbook_path), "--output", str(tmp_path / "o")])
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "--input",
+            str(workbook_path),
+            "--config",
+            str(EXAMPLE_CONFIG),
+            "--output",
+            str(tmp_path / "o"),
+        ],
+    )
     assert result.exit_code == 3
+    assert not (tmp_path / "o").exists()
+
+
+def test_cli_run_refuses_to_work_without_a_config(workbook_path: Path, tmp_path: Path) -> None:
+    """The bare Config() has no phrase hints; an implicit default would silently weaken the rules."""
+    build_workbook(workbook_path, [lead("L1")], [message("L1", "L1-M1")])
+    result = CliRunner().invoke(app, ["run", "--input", str(workbook_path), "--output", str(tmp_path / "o")])
+    assert result.exit_code == 2
     assert not (tmp_path / "o").exists()
