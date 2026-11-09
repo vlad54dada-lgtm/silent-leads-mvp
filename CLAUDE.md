@@ -14,11 +14,11 @@
 | Шар | Технологія |
 |---|---|
 | Мова | Python 3.12+ (локально 3.14), менеджер — `uv` |
-| Дані | `pandas` + `openpyxl` (читання/запис Excel), CSV через stdlib |
+| Дані | `openpyxl` (читання/запис Excel), CSV через stdlib. **Без pandas** — 50 лідів цього не потребують, а його DLL блокує Application Control на машині розробника |
 | Моделі/валідація | `pydantic` v2 — конфіг і доменні моделі (Lead, Message, Decision) |
 | CLI | `typer` |
 | Конфіг | YAML (`config.yaml`), приклад у `config.example.yaml` |
-| Тести | `pytest`, синтетичні фікстури в `tests/fixtures/` |
+| Тести | `pytest`, синтетичні файли генерує `tests/conftest.py` |
 | Якість | `ruff` (lint + format), `mypy --strict` |
 | AI-аналіз | **Вимкнено за замовчуванням.** Лише правила. Зовнішню модель — тільки після погодження з координатором, за прапором у конфігу |
 
@@ -28,9 +28,10 @@
 
 ```
 src/silent_leads/
-  cli.py            # typer: `silent-leads run --input ... --config ... --output ...`
+  cli.py            # typer: `validate` (перевірка файлу) і `run` (повний прогін)
   config.py         # pydantic-модель конфігу + завантаження YAML
   models.py         # Lead, Message, Decision, DataIssue, enum'и рішень
+  snapshot.py       # контрольна дата: з конфігу або з «Інструкція» → «Знімок UTC», у зоні CRM
   io/
     reader.py       # читання вкладок Excel → DataFrame → моделі
     writer.py       # results.xlsx/.csv, summary.md/.json
@@ -38,12 +39,17 @@ src/silent_leads/
   timeline.py       # хронологічна історія по case_id, визначення авторства
   rules/
     due_date.py     # строк першого касання
-    history.py      # відписка, негатив, новий контакт після silent, достатність контексту
+    history.py      # точний STOP/UNSUBSCRIBE, фрази-підказки, новий контакт після silent, достатність контексту
+    ai_review.py    # AI-аналіз контексту діалогу: мітка + впевненість + докази (Claude, за прапором)
     decide.py       # зведення в одне рішення з пріоритетом
   templates.py      # шаблони with_quote / without_quote, template_status
-  summary.py        # зведення за статусами та помилками
+  summary.py        # зведення за статусами, AI-мітками та помилками
+  evaluation.py     # метрики: розмітка людини vs мітки AI
+  ai_eval.py        # прогін AI по синтетичних діалогах з відомими мітками
+evals/
+  context_cases.yaml  # синтетичний набір для перевірки промпта (жодних реальних даних)
 tests/
-  fixtures/         # ТІЛЬКИ синтетичні дані, жодних рядків з реальної вигрузки
+  conftest.py       # генератор синтетичних xlsx-файлів; жодних рядків з реальної вигрузки
 data/
   input/            # реальна вигрузка — в .gitignore
   output/           # результати — в .gitignore
@@ -57,24 +63,37 @@ docs/
 
 ## Команди
 
+> На машині розробника Windows Application Control блокує uv-managed Python і `.exe`-обгортки
+> в `.venv/Scripts`. Тому: venv створюється з системного Python 3.14, усе запускається через `python -m`.
+> Перед `uv`-командами в цьому середовищі: `export UV_PYTHON_PREFERENCE=only-system`
+> `UV_PYTHON="C:/Users/Acer/AppData/Local/Python/pythoncore-3.14-64/python.exe"`.
+> На іншій машині достатньо `uv sync`.
+
 ```bash
 uv sync                                   # встановити залежності
-uv run silent-leads run --input data/input/export.xlsx --config config.yaml --output data/output
-uv run pytest                             # тести
-uv run ruff check . && uv run ruff format --check .
-uv run mypy src
+uv run python -m silent_leads.cli validate --input data/input/export.xlsx --config config.example.yaml
+uv run python -m silent_leads.cli run --input data/input/export.xlsx --config config.yaml --output data/output
+uv run python -m pytest                   # тести
+uv run python -m ruff check . && uv run python -m ruff format --check .
+uv run python -m mypy
 ```
+
+У виводі CLI — лише ASCII-символи поза кирилицею (без `→`, `✓` тощо): консоль Windows у cp1251 падає на них.
 
 ## Правила — ЗАВЖДИ
 
 - **Безпека важливіша за охоплення.** Сумнів → `manual_review`, ніколи не `contact_candidate`.
   Явна відписка → `do_not_contact` незалежно від строку.
+- **Єдине текстове правило — точний STOP/UNSUBSCRIBE:** усе повідомлення клієнта = ключове слово
+  (`phrases.exact_opt_out`). Решту формулювань оцінює AI за контекстом діалогу (`rules/ai_review.py`);
+  фрази з `phrases.hints` — лише підказки, не рішення. Без AI підказка → `manual_review`.
+- **AI не робить кейс кандидатом сам** і блокує лише з високою впевненістю і доказом; усе інше → `manual_review`.
 - **Пріоритет рішень фіксований:** `do_not_contact` > `manual_review` > `skip_not_due` > `contact_candidate`.
 - **Дата silent — лише `silent_since_crm`.** Контрольна дата — дата знімка з конфігу/файлу,
   **ніколи `datetime.now()`** у логіці рішень.
 - **Порівнюй календарні дати в `crm_timezone`**, не naive datetime і не UTC за замовчуванням.
 - **Усі магічні числа — в конфігу:** `first_touch_delay_days`, `crm_timezone`, `snapshot_date`,
-  шаблони, списки фраз-відписок.
+  шаблони, `phrases.exact_opt_out`, `phrases.hints`, параметри `ai_review`.
 - **Докази — лише з того самого `case_id`.** Перед записом перевіряй, що кожен `message_id` належить кейсу.
 - **Прихований/порожній текст ≠ дозвіл.** Якщо текст відсутній у ключових повідомленнях — знижуй
   впевненість → `manual_review`.
@@ -89,7 +108,8 @@ uv run mypy src
 - **Детермінізм:** стабільне сортування (по `case_id`, по даті+`message_id`), повний перезапис вихідних
   файлів, один рядок на `case_id`. Тест повторного запуску обов'язковий.
 - Нова логіка в `rules/` → unit-тест на синтетичних даних. Обов'язкові тести: строк касання (до/в день/після,
-  межа дня в tz), відписка, негатив, відсутні дані, обидві гілки квоти, повторний запуск.
+  межа дня в tz), точний STOP і його межі, підказки без AI, усі гілки відповіді AI, відсутні дані,
+  обидві гілки квоти, повторний запуск. Нова помилка моделі → новий кейс у `evals/context_cases.yaml`.
 - Перед комітом: `ruff`, `mypy`, `pytest` — зелені.
 - Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`), робота в гілках `feat/...`.
 - Приклад конфігу `config.example.yaml` оновлюється разом із будь-якою новою опцією.
@@ -97,7 +117,8 @@ uv run mypy src
 ## Правила — НІКОЛИ
 
 - **Ніколи не коміть вигрузку** чи її фрагменти: `data/` в `.gitignore`; у тестах і документації —
-  лише синтетичні приклади. Жодних реальних `case_id`, текстів діалогів чи псевдонімів у репо.
+  лише синтетичні приклади. Жодних текстів діалогів, їх переказу, псевдонімів чи реальних `case_id` у репо
+  (репозиторій публічний): у `docs/review-log.md` кейси позначаються умовними `K01…`, відповідність — у `data/`.
 - **Ніколи не передавай дані вигрузки в зовнішні сервіси** (AI-моделі, API, хмари) без явного погодження
   координатора, зафіксованого в `docs/limitations.md`.
 - Ніколи не вигадуй знижки, ціни, дати, обіцянки в шаблонах. Немає затвердженого шаблону → порожній

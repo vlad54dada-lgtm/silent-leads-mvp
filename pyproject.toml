@@ -1,0 +1,49 @@
+[project]
+name = "silent-leads"
+version = "0.1.0"
+description = "Offline MVP: decide whether silent CRM leads may receive a first re-touch, for human review"
+authors = [{ name = "vlad54dada-lgtm" }]
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=2.6.0",
+    "openpyxl>=3.1.5",
+    "pydantic>=2.14.3",
+    "pyyaml>=6.0.3",
+    "typer>=0.28.0",
+    "tzdata>=2026.6",
+]
+
+[project.scripts]
+silent-leads = "silent_leads.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.0",
+    "types-openpyxl>=3.1.5.20261017",
+    "types-pyyaml>=6.0.12.20261103",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N", "W", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # Cyrillic text in strings/comments is intended
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src"]
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
