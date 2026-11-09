@@ -54,6 +54,17 @@ class Phrases(BaseModel):
     negative: tuple[str, ...] = ()
 
 
+class ReviewTriggers(BaseModel):
+    """Which situations send a case to manual_review. All default to the safe side."""
+
+    model_config = ConfigDict(frozen=True)
+
+    contact_after_silent: bool = True
+    hidden_inbound: bool = True
+    no_client_text: bool = True
+    unknown_speaker_phrase: bool = True
+
+
 class Config(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -63,7 +74,7 @@ class Config(BaseModel):
     sheets: SheetNames = SheetNames()
     templates: Templates = Templates()
     phrases: Phrases = Phrases()
-    unknown_speaker_requires_review: bool = True
+    review: ReviewTriggers = ReviewTriggers()
 
     @field_validator("crm_timezone")
     @classmethod
