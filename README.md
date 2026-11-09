@@ -76,7 +76,7 @@ uv run python -m silent_leads.cli run --input data/input/export.xlsx --config co
 ```yaml
 ai_review:
   enabled: true
-  model: claude-opus-5-5
+  model: claude-sonnet-5-5   # рекомендована; Haiku 5.5 дешевша у 20 разів, але частіше відправляє на ручну перевірку
 ```
 
 Ключ API читається зі змінної середовища, назву якої задає `ai_review.api_key_env`
@@ -110,7 +110,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run.ps1
 ```yaml
 ai_review:
   enabled: true
-  model: anthropic/claude-opus-5.5      # назва моделі як на openrouter.ai/models
+  model: anthropic/claude-sonnet-5.5    # назва моделі як на openrouter.ai/models
   base_url: https://openrouter.ai/api
   api_key_env: OPENROUTER_API_KEY
 ```

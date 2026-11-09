@@ -147,8 +147,11 @@ cases:
       - {speaker: sales, text: "Hi, calling about your quote."}
       - {speaker: unknown, text: "please stop"}
   - id: U04
-    expected: unclear
-    note: Суперечливі сигнали
+    expected: none
+    note: >
+      Суперечливі сигнали, але клієнт сам просить надіслати квоту — це відкладання, не відмова.
+      Початково було розмічено як unclear; усі три моделі (Haiku/Sonnet/Opus 5.5) відповіли none
+      з обґрунтуванням, з яким автор погодився (2026-11-09).
     dialogue:
       - {speaker: sales, text: "Can we schedule the visit?"}
       - {speaker: client, text: "Leave me alone today... but send the quote again, I lost it."}
