@@ -78,6 +78,34 @@ class AiReview(BaseModel):
     enabled: bool = False
     model: str = "claude-opus-5-5"
     max_input_chars: int = Field(default=20000, ge=500)
+    # None -> api.anthropic.com. An Anthropic-compatible gateway (e.g. https://openrouter.ai/api)
+    # adds a third party that sees client texts; record its approval in docs/limitations.md.
+    base_url: str | None = None
+    # Name of the environment variable holding the API key, never the key itself.
+    api_key_env: str = "ANTHROPIC_API_KEY"
+
+    @field_validator("base_url")
+    @classmethod
+    def _base_url_is_https(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().rstrip("/")
+        if not value.startswith("https://"):
+            msg = "ai_review.base_url must start with https://"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("api_key_env")
+    @classmethod
+    def _api_key_env_is_a_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or not all(ch.isalnum() or ch == "_" for ch in value):
+            msg = "ai_review.api_key_env must be an environment variable NAME (letters, digits, _)"
+            raise ValueError(msg)
+        if value.lower().startswith("sk-") or len(value) > 64:
+            msg = "ai_review.api_key_env looks like a key value; put the key in the environment, not here"
+            raise ValueError(msg)
+        return value
 
 
 class Config(BaseModel):

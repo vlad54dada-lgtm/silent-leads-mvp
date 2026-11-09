@@ -74,7 +74,8 @@ ai_review:
   model: claude-opus-5-5
 ```
 
-Ключ API читається зі змінної середовища `ANTHROPIC_API_KEY` (у конфіг або репозиторій його не класти).
+Ключ API читається зі змінної середовища, назву якої задає `ai_review.api_key_env`
+(за замовчуванням `ANTHROPIC_API_KEY`); у конфіг або репозиторій ключ не класти.
 На Windows зручно задати його один раз для користувача і запускати через `scripts/run.ps1`,
 який підхоплює його автоматично:
 
@@ -86,6 +87,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run.ps1
 AI-перевірку (неперевірений кандидат не є кандидатом).
 Модель отримує лише репліки клієнта для кейсів, що вже стали `contact_candidate`, і може лише перевести
 кейс у `manual_review`. Деталі й обмеження — у [docs/limitations.md](docs/limitations.md).
+
+Замість прямого доступу до Anthropic можна використати Anthropic-сумісний шлюз, наприклад OpenRouter
+(це додає посередника, який бачить тексти клієнтів, тож потребує окремого погодження):
+
+```yaml
+ai_review:
+  enabled: true
+  model: anthropic/claude-opus-5.5      # назва моделі як на openrouter.ai/models
+  base_url: https://openrouter.ai/api
+  api_key_env: OPENROUTER_API_KEY
+```
+
+Якщо шлюз не приймає структурований формат відповіді, інструмент повторює запит у режимі «лише JSON»
+і перевіряє відповідь за тією самою схемою; будь-яка невідповідність → `manual_review`.
 
 ## Перевірка якості
 

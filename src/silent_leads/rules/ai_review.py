@@ -11,6 +11,8 @@ Design constraints (from the sprint spec and the coordinator's approval):
 from __future__ import annotations
 
 import json
+import os
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -160,21 +162,40 @@ def _join(existing: str, extra: str) -> str:
 
 
 class ClaudeReviewer:
-    """Calls the Claude API with structured output. Credentials come from the environment."""
+    """Calls the Claude Messages API with structured output.
+
+    The key is read from the environment variable named in ``settings.api_key_env``; an
+    Anthropic-compatible gateway (e.g. OpenRouter) is reached via ``settings.base_url``.
+    Gateways may reject the structured-output parameter; then the model is asked for plain
+    JSON and the answer is validated with the same schema (any mismatch -> error -> manual_review).
+    """
 
     def __init__(self, settings: AiReview) -> None:
         import anthropic  # imported here so the offline path never needs the SDK
 
         self._anthropic = anthropic
-        self._client = anthropic.Anthropic()
         self._model = settings.model
+        self._api_key_env = settings.api_key_env
+        api_key = os.environ.get(settings.api_key_env) or None
+        self._has_key = api_key is not None
+        self._client = anthropic.Anthropic(api_key=api_key, base_url=settings.base_url)
 
     def assess(self, case_id: str, payload: str) -> AiAssessment:
+        if not self._has_key:
+            msg = f"змінну середовища {self._api_key_env} не задано"
+            raise RuntimeError(msg)
+        content = f"Case {case_id}. Client messages:\n{payload}"
+        try:
+            return self._assess_structured(content)
+        except self._anthropic.BadRequestError:
+            return self._assess_plain_json(content)
+
+    def _assess_structured(self, content: str) -> AiAssessment:
         response = self._client.messages.parse(
             model=self._model,
             max_tokens=2048,
             system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": f"Case {case_id}. Client messages:\n{payload}"}],
+            messages=[{"role": "user", "content": content}],
             output_format=AiAssessment,
         )
         if response.stop_reason == "refusal":
@@ -185,3 +206,32 @@ class ClaudeReviewer:
                 label=AiLabel.UNCLEAR, explanation="модель не повернула структуровану відповідь"
             )
         return parsed
+
+    def _assess_plain_json(self, content: str) -> AiAssessment:
+        response = self._client.messages.create(
+            model=self._model,
+            max_tokens=2048,
+            system=SYSTEM_PROMPT + " " + JSON_ONLY_INSTRUCTION,
+            messages=[{"role": "user", "content": content}],
+        )
+        if response.stop_reason == "refusal":
+            return AiAssessment(label=AiLabel.UNCLEAR, explanation="модель відмовилась аналізувати цей текст")
+        text = "".join(block.text for block in response.content if block.type == "text")
+        return parse_assessment_text(text)
+
+
+JSON_ONLY_INSTRUCTION = (
+    "Reply with a single JSON object and nothing else, no markdown fences: "
+    '{"label": "none|opt_out|negative|unclear", "evidence_message_ids": ["..."], "explanation": "..."}'
+)
+
+_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def parse_assessment_text(text: str) -> AiAssessment:
+    """Validate a plain-text model answer against the schema. Raises on anything else."""
+    match = _JSON_OBJECT_RE.search(text)
+    if match is None:
+        msg = "відповідь моделі не містить JSON-обʼєкта"
+        raise ValueError(msg)
+    return AiAssessment.model_validate_json(match.group(0))
