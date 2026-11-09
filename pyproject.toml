@@ -5,6 +5,7 @@ description = "Offline MVP: decide whether silent CRM leads may receive a first 
 authors = [{ name = "vlad54dada-lgtm" }]
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=2.6.0",
     "openpyxl>=3.1.5",
     "pydantic>=2.14.3",
     "pyyaml>=6.0.3",

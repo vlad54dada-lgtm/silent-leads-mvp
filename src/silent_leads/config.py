@@ -65,6 +65,21 @@ class ReviewTriggers(BaseModel):
     unknown_speaker_phrase: bool = True
 
 
+class AiReview(BaseModel):
+    """Optional second-opinion pass over contact candidates by a Claude model.
+
+    Off by default. Requires coordinator approval (recorded in docs/limitations.md).
+    The model sees only the client's own utterances and can only move a case
+    from contact_candidate to manual_review — never the other way.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    model: str = "claude-opus-5-5"
+    max_input_chars: int = Field(default=20000, ge=500)
+
+
 class Config(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -75,6 +90,7 @@ class Config(BaseModel):
     templates: Templates = Templates()
     phrases: Phrases = Phrases()
     review: ReviewTriggers = ReviewTriggers()
+    ai_review: AiReview = AiReview()
 
     @field_validator("crm_timezone")
     @classmethod

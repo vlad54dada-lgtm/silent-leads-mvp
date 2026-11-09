@@ -35,6 +35,15 @@ def build_summary(config: Config, run: RunResult) -> dict[str, Any]:
         "manual_review_cases": sorted(r.case_id for r in run.results if r.decision == Decision.MANUAL_REVIEW),
         "template_status": {t.value: by_template.get(t, 0) for t in TemplateStatus if by_template.get(t, 0)},
         "findings": {k.value: v for k, v in sorted(by_finding.items())},
+        "ai_review": {
+            "enabled": config.ai_review.enabled,
+            "model": config.ai_review.model if config.ai_review.enabled else None,
+            "reviewed": len(run.ai_outcomes),
+            "cleared": sum(1 for o in run.ai_outcomes.values() if not o.flags),
+            "flagged": sum(1 for o in run.ai_outcomes.values() if o.flags and o.error is None),
+            "errors": sum(1 for o in run.ai_outcomes.values() if o.error is not None),
+            "flagged_cases": sorted(c for c, o in run.ai_outcomes.items() if o.flags),
+        },
         "data_issues": {
             "total": len(run.issues),
             "errors": by_issue_level.get(IssueLevel.ERROR, 0),
@@ -74,6 +83,18 @@ def render_summary_markdown(summary: dict[str, Any]) -> str:
     lines.extend(f"- `{k}`: {v}" for k, v in summary["findings"].items())
     if not summary["findings"]:
         lines.append("- немає")
+    ai = summary["ai_review"]
+    lines += ["", "## AI-перевірка кандидатів", ""]
+    if ai["enabled"]:
+        lines += [
+            f"Модель `{ai['model']}`. Перевірено кандидатів: {ai['reviewed']}, "
+            f"без зауважень: {ai['cleared']}, переведено на ручну перевірку: {ai['flagged']}, "
+            f"помилок виклику: {ai['errors']}.",
+        ]
+        if ai["flagged_cases"]:
+            lines.append(f"Кейси: {', '.join(ai['flagged_cases'])}")
+    else:
+        lines.append("Вимкнена (`ai_review.enabled: false`).")
     issues = summary["data_issues"]
     lines += [
         "",

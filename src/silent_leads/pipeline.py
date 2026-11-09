@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from silent_leads.config import Config
 from silent_leads.io.reader import Export
-from silent_leads.models import CaseResult, DataIssue
+from silent_leads.models import CaseResult, DataIssue, Decision
+from silent_leads.rules.ai_review import AiOutcome, Reviewer, apply_ai_outcome, review_candidate
 from silent_leads.rules.decide import decide
 from silent_leads.rules.due_date import check_due
 from silent_leads.rules.history import Finding, analyse_history
@@ -23,9 +24,11 @@ class RunResult:
     results: tuple[CaseResult, ...]  # sorted by case_id, exactly one per lead
     issues: tuple[DataIssue, ...]
     findings: dict[str, tuple[Finding, ...]]
+    ai_outcomes: dict[str, AiOutcome] = field(default_factory=dict)  # only reviewed cases
 
 
-def run_pipeline(config: Config, export: Export) -> RunResult:
+def run_pipeline(config: Config, export: Export, reviewer: Reviewer | None = None) -> RunResult:
+    """``reviewer`` is used only when ``config.ai_review.enabled``; None builds the Claude client."""
     snapshot = resolve_snapshot(config, export)
     issues = [*export.issues, *validate_links(export)]
     by_case: dict[str, list[DataIssue]] = defaultdict(list)
@@ -33,13 +36,27 @@ def run_pipeline(config: Config, export: Export) -> RunResult:
         if issue.case_id is not None:
             by_case[issue.case_id].append(issue)
 
+    if config.ai_review.enabled and reviewer is None:
+        from silent_leads.rules.ai_review import ClaudeReviewer
+
+        reviewer = ClaudeReviewer(config.ai_review)
+
     timelines = build_timelines(export.leads, export.messages)
     results: list[CaseResult] = []
     findings_by_case: dict[str, tuple[Finding, ...]] = {}
+    ai_outcomes: dict[str, AiOutcome] = {}
     for case_id, timeline in timelines.items():
         due = check_due(timeline.lead, snapshot.control_date, config.first_touch_delay_days)
         findings = analyse_history(timeline, config)
         verdict = decide(timeline, due, findings, by_case.get(case_id, []))
+        if (
+            config.ai_review.enabled
+            and reviewer is not None
+            and verdict.decision == Decision.CONTACT_CANDIDATE
+        ):
+            outcome = review_candidate(timeline, reviewer, config.ai_review)
+            ai_outcomes[case_id] = outcome
+            verdict = apply_ai_outcome(verdict, outcome)
         draft, template_status = prepare_draft(timeline.lead, verdict.decision, config.templates)
         results.append(
             CaseResult(
@@ -59,4 +76,5 @@ def run_pipeline(config: Config, export: Export) -> RunResult:
         results=tuple(sorted(results, key=lambda r: r.case_id)),
         issues=tuple(issues),
         findings=findings_by_case,
+        ai_outcomes=ai_outcomes,
     )

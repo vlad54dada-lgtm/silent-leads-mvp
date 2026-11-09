@@ -122,6 +122,12 @@ def run(
         f"Проблем даних: {summary['data_issues']['total']} "
         f"(error={summary['data_issues']['errors']}, warning={summary['data_issues']['warnings']})"
     )
+    ai = summary["ai_review"]
+    if ai["enabled"]:
+        typer.echo(
+            f"AI-перевірка ({ai['model']}): перевірено {ai['reviewed']}, "
+            f"на ручну {ai['flagged']}, помилок {ai['errors']}"
+        )
     typer.echo("Записано:")
     for path in written:
         typer.echo(f"  {path}")

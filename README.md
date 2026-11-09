@@ -64,6 +64,20 @@ uv run python -m silent_leads.cli run --input data/input/export.xlsx --config co
 5. **Текст** формується лише для `contact_candidate` і лише з наданого шаблону; без шаблону —
    порожній текст і `template_missing`.
 
+## AI-перевірка кандидатів (опційно, погоджено з координатором)
+
+Увімкнення в `config.yaml`:
+
+```yaml
+ai_review:
+  enabled: true
+  model: claude-opus-5-5
+```
+
+Ключ API читається зі змінної середовища `ANTHROPIC_API_KEY` (у конфіг або репозиторій його не класти).
+Модель отримує лише репліки клієнта для кейсів, що вже стали `contact_candidate`, і може лише перевести
+кейс у `manual_review`. Деталі й обмеження — у [docs/limitations.md](docs/limitations.md).
+
 ## Перевірка якості
 
 ```bash
