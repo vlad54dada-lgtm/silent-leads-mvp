@@ -3,6 +3,8 @@
 ``validate``  check the export;  ``run``  full pipeline;
 ``evaluate-labels``  compare human labels with AI labels (ai_labels.csv);
 ``ai-eval``   run the AI context analysis over synthetic dialogues with known labels.
+``evaluate-policy``  v2: compare labels.csv with the reference labels inside the export;
+``policy-eval``  v2: run the policy judge over synthetic dialogues with known labels.
 """
 
 from __future__ import annotations
@@ -20,6 +22,15 @@ from silent_leads.io.reader import Export, ExportFormatError, read_export
 from silent_leads.io.writer import write_outputs
 from silent_leads.models import IssueLevel
 from silent_leads.pipeline import run_pipeline
+from silent_leads.policy_eval import (
+    evaluate_policy,
+    join_rows,
+    load_policy_set,
+    read_reference_labels,
+    read_tool_labels,
+    render_policy_markdown,
+    run_policy_eval,
+)
 from silent_leads.snapshot import SnapshotUnknownError, resolve_snapshot
 from silent_leads.summary import build_summary, render_summary_markdown
 from silent_leads.timeline import build_timelines
@@ -37,6 +48,21 @@ CONFIG_OPTION = typer.Option(..., "--config", "-c", exists=True, dir_okay=False,
 OUTPUT_OPTION = typer.Option(Path("data/output"), "--output", "-o", file_okay=False, help="Папка результатів")
 LABELS_OPTION = typer.Option(
     ..., "--labels", "-l", exists=True, dir_okay=False, help="ai_labels.csv із заповненою human_label"
+)
+POLICY_LABELS_OPTION = typer.Option(
+    Path("data/output/labels.csv"),
+    "--labels",
+    "-l",
+    exists=True,
+    dir_okay=False,
+    help="labels.csv з прогону v2",
+)
+POLICY_CASES_OPTION = typer.Option(
+    Path("evals/policy_cases.yaml"),
+    "--cases",
+    exists=True,
+    dir_okay=False,
+    help="Синтетичні діалоги з мітками v2",
 )
 CASES_OPTION = typer.Option(
     Path("evals/context_cases.yaml"),
@@ -133,6 +159,9 @@ def run(
         summary,
         render_summary_markdown(summary),
         result.ai_outcomes,
+        result.verdicts,
+        result.policy_outcomes,
+        result.drafts,
     )
 
     typer.echo(
@@ -147,7 +176,24 @@ def run(
         f"(error={summary['data_issues']['errors']}, warning={summary['data_issues']['warnings']})"
     )
     ai = summary["ai_review"]
-    if ai["enabled"]:
+    cp = summary["contact_policy"]
+    if cp is not None:
+        labels = ", ".join(f"{k}={v}" for k, v in cp["labels"].items())
+        typer.echo(f"Політика v2: мітки {labels}")
+        typer.echo(
+            f"  AI оцінила {cp['judged_by_ai']} кейсів, помилок {cp['ai_errors']}; "
+            f"крок 4: {len(cp['step4_cases'])}; "
+            f"питань до замовника: {len(cp['questions_for_owner'])}"
+        )
+        if cp["ai_error_kinds"]:
+            kinds = ", ".join(f"{k} x{v}" for k, v in cp["ai_error_kinds"].items())
+            typer.secho(
+                f"  УВАГА: AI не оцінила частину кейсів ({kinds}); вони на ручній перевірці", fg="yellow"
+            )
+        if cp["drafts"]["enabled"]:
+            drafts = ", ".join(f"{k}={v}" for k, v in cp["drafts"]["by_status"].items())
+            typer.echo(f"  Чернетки SMS: {drafts}")
+    elif ai["enabled"]:
         typer.echo(
             f"AI-аналіз ({ai['model']}): кейсів {ai['reviewed']}, заблоковано {ai['blocked']}, "
             f"без зауважень {ai['cleared']}, на ручну {ai['needs_review']}, помилок {ai['errors']}"
@@ -203,6 +249,70 @@ def ai_eval(
     )
     _echo_report(report)
     typer.echo(f"Записано: {output_dir / 'ai_eval.md'}, {output_dir / 'ai_eval.json'}")
+
+
+@app.command()
+def evaluate_policy_labels(
+    input_path: Path = INPUT_OPTION,
+    config_path: Path = CONFIG_OPTION,
+    labels_path: Path = POLICY_LABELS_OPTION,
+    output_dir: Path = OUTPUT_OPTION,
+) -> None:
+    """v2: порівняти мітки інструмента (labels.csv) з еталоном у вигрузці («Розмітка» і «Приклади»)."""
+    config = _load_config(config_path)
+    reference = read_reference_labels(input_path, config.sheets)
+    if not reference:
+        typer.secho(
+            "У файлі немає заповнених еталонних міток («Розмітка» / «Приклади»).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(EXIT_FORMAT)
+    report = evaluate_policy(join_rows(reference, read_tool_labels(labels_path)))
+    _write_policy_report(report, "Мітки v2 проти еталону у вигрузці", output_dir, "policy_evaluation")
+
+
+@app.command()
+def policy_eval(
+    cases_path: Path = POLICY_CASES_OPTION,
+    config_path: Path = CONFIG_OPTION,
+    output_dir: Path = OUTPUT_OPTION,
+) -> None:
+    """v2: прогнати AI-оцінку позиції клієнта по синтетичних діалогах з відомими мітками."""
+    config = _load_config(config_path)
+    if not config.ai_review.enabled:
+        typer.secho(
+            "ai_review.enabled: false — увімкніть AI-аналіз у конфігу.", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(EXIT_AI_DISABLED)
+    from silent_leads.rules.contact_policy import ClaudePolicyJudge
+
+    rows = run_policy_eval(load_policy_set(cases_path), ClaudePolicyJudge(config.ai_review), config.ai_review)
+    report = evaluate_policy(rows)
+    title = f"Політика v2 на синтетичному наборі ({cases_path.name}, модель {config.ai_review.model})"
+    _write_policy_report(report, title, output_dir, "policy_eval")
+
+
+def _write_policy_report(report: dict[str, object], title: str, output_dir: Path, stem: str) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    md = output_dir / f"{stem}.md"
+    js = output_dir / f"{stem}.json"
+    md.write_text(render_policy_markdown(report, title), encoding="utf-8")
+    js.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    accuracy = report["accuracy"]
+    pct = "-" if accuracy is None else f"{float(accuracy) * 100:.1f}%"  # type: ignore[arg-type]
+    missed = report["missed_refusals"]
+    mismatches = report["mismatches"]
+    assert isinstance(missed, list) and isinstance(mismatches, list)
+    typer.echo(f"Порівняно: {report['compared']} з {report['reference']}; точність по мітках {pct}")
+    typer.echo(f"Пропущені відмови: {len(missed)}" + (f" ({', '.join(missed)})" if missed else ""))
+    typer.echo(f"Розбіжностей: {len(mismatches)}")
+    for m in mismatches:
+        typer.echo(
+            f"  {m['case_id']}: еталон {m['expected']}, "
+            f"інструмент {m['predicted']} ({m['confidence'] or '?'})"
+        )
+    typer.echo(f"Записано: {md}, {js}")
 
 
 def _echo_report(report: dict[str, object]) -> None:

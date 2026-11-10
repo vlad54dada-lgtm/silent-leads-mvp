@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
@@ -19,6 +21,9 @@ class SheetNames(BaseModel):
     messages: str = "Повідомлення"
     instruction: str = "Інструкція"
     control: str = "Контроль"
+    # v2 reference labels (optional sheets): human labels and the worked examples.
+    labels: str = "Розмітка"
+    examples: str = "Приклади"
 
 
 class Template(BaseModel):
@@ -98,6 +103,10 @@ class AiReview(BaseModel):
     # None -> api.anthropic.com. An Anthropic-compatible gateway (e.g. https://openrouter.ai/api)
     # adds a third party that sees client texts; record its approval in docs/limitations.md.
     base_url: str | None = None
+    # v2: folder where model answers are stored and reused (key = model + prompt + dialogue), so a
+    # rerun asks the model only about what changed and is repeatable. The answers are derived
+    # from the export: keep the folder under data/ (never committed). None -> no cache.
+    cache_dir: str | None = None
     # Name of the environment variable holding the API key, never the key itself.
     api_key_env: str = "ANTHROPIC_API_KEY"
 
@@ -125,6 +134,65 @@ class AiReview(BaseModel):
         return value
 
 
+class ContactPolicy(BaseModel):
+    """Deterministic parts of the v2 policy («Кому пишемо»): step 4 and what counts as a hidden talk.
+
+    Step 4: a case needs a human only when, AFTER the client's last position on the project,
+    there is a hidden conversation or a connected call without a transcript — a refusal may sit
+    there. Voicemail greetings, contact details, platform notices, hang-ups are not a reason.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # hidden_kind values that may hide what the client said.
+    risky_hidden_kinds: tuple[str, ...] = ("conversation",)
+    # A withheld event with no hidden_kind is treated as a risky conversation (unknown = risk).
+    unknown_hidden_kind_is_risky: bool = True
+    # call_result values meaning the call connected; such a call without a transcript is a risk.
+    connected_call_results: tuple[str, ...] = ("SUCCESS",)
+
+
+DEFAULT_FORBIDDEN_DRAFT_PATTERNS: tuple[str, ...] = (
+    r"\d",  # any digit: prices, discounts, dates, phone numbers
+    r"\$",
+    "%",
+    r"https?://",
+    r"www\.",
+    r"\[",  # masked markers such as [ІМʼЯ] / [ТЕЛЕФОН] must never reach a client
+    r"\]",
+    "@",
+)
+
+
+class Drafts(BaseModel):
+    """AI-written draft SMS for contact candidates (v2). Off by default; needs ``ai_review``.
+
+    A draft is a suggestion for the sales rep, never an approved template: the «Результат»
+    columns ``draft_sms`` / ``template_status`` keep following ``templates``. Drafts go to a
+    separate sheet and are rejected by code if they contain anything from ``forbidden_patterns``
+    (numbers, money, links, masked markers) or exceed ``max_chars``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    max_chars: int = Field(default=320, ge=60, le=1000)
+    # How much of the END of the dialogue the draft writer sees (characters of text).
+    context_chars: int = Field(default=6000, ge=500)
+    forbidden_patterns: tuple[str, ...] = DEFAULT_FORBIDDEN_DRAFT_PATTERNS
+
+    @field_validator("forbidden_patterns")
+    @classmethod
+    def _patterns_compile(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        for pattern in value:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                msg = f"drafts.forbidden_patterns: invalid regex {pattern!r}: {exc}"
+                raise ValueError(msg) from exc
+        return value
+
+
 class Config(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -136,6 +204,12 @@ class Config(BaseModel):
     phrases: Phrases = Phrases()
     review: ReviewTriggers = ReviewTriggers()
     ai_review: AiReview = AiReview()
+    # v1: the first sprint rules (exact STOP + review triggers + AI refusal check).
+    # v2: the «Кому пишемо» policy — AI judges the client's last position (steps 1-3), code applies
+    #     step 4, the 7-day rule and post-silent contact. See PRODUCT.md.
+    policy: Literal["v1", "v2"] = "v1"
+    contact_policy: ContactPolicy = ContactPolicy()
+    drafts: Drafts = Drafts()
 
     @field_validator("crm_timezone")
     @classmethod

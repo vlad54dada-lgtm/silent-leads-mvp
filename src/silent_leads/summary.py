@@ -6,9 +6,11 @@ from collections import Counter
 from typing import Any
 
 from silent_leads.config import Config
-from silent_leads.models import Decision, IssueLevel, TemplateStatus
+from silent_leads.models import Decision, IssueLevel, PolicyLabel, TemplateStatus
 from silent_leads.pipeline import RunResult
 from silent_leads.rules.ai_review import AiConfidence, AiLabel
+from silent_leads.rules.contact_policy import REASON_HIDDEN_CONVERSATION
+from silent_leads.rules.drafts import DraftStatus
 
 _DECISION_ORDER = (
     Decision.CONTACT_CANDIDATE,
@@ -16,6 +18,34 @@ _DECISION_ORDER = (
     Decision.DO_NOT_CONTACT,
     Decision.MANUAL_REVIEW,
 )
+
+
+def _policy_summary(config: Config, run: RunResult) -> dict[str, Any]:
+    verdicts = run.verdicts
+    by_label = Counter(v.label for v in verdicts.values())
+    by_reason = Counter(v.label_reason for v in verdicts.values())
+    by_confidence = Counter(v.confidence or "-" for v in verdicts.values())
+    outcomes = run.policy_outcomes
+    drafts = run.drafts
+    by_draft = Counter(d.status for d in drafts.values())
+    return {
+        "labels": {label.value: by_label.get(label, 0) for label in PolicyLabel},
+        "reasons": dict(sorted(by_reason.items())),
+        "confidence": dict(sorted(by_confidence.items())),
+        "judged_by_ai": len(outcomes),
+        "ai_errors": sum(1 for o in outcomes.values() if o.error is not None),
+        "ai_error_kinds": dict(
+            sorted(Counter(o.error.split(":")[0] for o in outcomes.values() if o.error is not None).items())
+        ),
+        "step4_cases": sorted(c for c, v in verdicts.items() if v.label_reason == REASON_HIDDEN_CONVERSATION),
+        "questions_for_owner": sorted(c for c, v in verdicts.items() if v.question_for_owner),
+        "new_contact_after_silent": sum(1 for v in verdicts.values() if v.new_contact_after_silent),
+        "candidates": sorted(r.case_id for r in run.results if r.decision == Decision.CONTACT_CANDIDATE),
+        "drafts": {
+            "enabled": config.ai_review.enabled and config.drafts.enabled,
+            "by_status": {s.value: by_draft.get(s, 0) for s in DraftStatus},
+        },
+    }
 
 
 def build_summary(config: Config, run: RunResult) -> dict[str, Any]:
@@ -52,6 +82,8 @@ def build_summary(config: Config, run: RunResult) -> dict[str, Any]:
             "blocked_cases": sorted(c for c, o in outcomes.items() if o.blocks),
             "review_cases": sorted(c for c, o in outcomes.items() if o.needs_review),
         },
+        "policy": run.policy,
+        "contact_policy": _policy_summary(config, run) if run.policy == "v2" else None,
         "data_issues": {
             "total": len(run.issues),
             "errors": by_issue_level.get(IssueLevel.ERROR, 0),
@@ -87,7 +119,29 @@ def render_summary_markdown(summary: dict[str, Any]) -> str:
         "",
     ]
     lines.extend(f"- `{k}`: {v}" for k, v in summary["template_status"].items())
-    lines += ["", "## Знахідки в історії (кількість кейсів з ознакою)", ""]
+    if summary.get("contact_policy") is not None:
+        lines += _policy_markdown(summary)
+    else:
+        lines += _v1_markdown(summary)
+    issues = summary["data_issues"]
+    lines += [
+        "",
+        "## Проблеми даних",
+        "",
+        f"Усього {issues['total']} (помилок {issues['errors']}, попереджень {issues['warnings']}). "
+        f"Кейсів з помилками: {len(issues['cases_with_errors'])}"
+        + (f" ({', '.join(issues['cases_with_errors'])})" if issues["cases_with_errors"] else ""),
+        "",
+    ]
+    lines.extend(f"- `{k}`: {v}" for k, v in issues["by_code"].items())
+    if not issues["by_code"]:
+        lines.append("- не виявлено")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _v1_markdown(summary: dict[str, Any]) -> list[str]:
+    lines = ["", "## Знахідки в історії (кількість кейсів з ознакою)", ""]
     lines.extend(f"- `{k}`: {v}" for k, v in summary["findings"].items())
     if not summary["findings"]:
         lines.append("- немає")
@@ -117,18 +171,40 @@ def render_summary_markdown(summary: dict[str, Any]) -> str:
         lines.append(
             "Вимкнений (`ai_review.enabled: false`): фрази-підказки відправляють кейс на ручну перевірку."
         )
-    issues = summary["data_issues"]
-    lines += [
-        "",
-        "## Проблеми даних",
-        "",
-        f"Усього {issues['total']} (помилок {issues['errors']}, попереджень {issues['warnings']}). "
-        f"Кейсів з помилками: {len(issues['cases_with_errors'])}"
-        + (f" ({', '.join(issues['cases_with_errors'])})" if issues["cases_with_errors"] else ""),
-        "",
-    ]
-    lines.extend(f"- `{k}`: {v}" for k, v in issues["by_code"].items())
-    if not issues["by_code"]:
-        lines.append("- не виявлено")
-    lines.append("")
-    return "\n".join(lines)
+    return lines
+
+
+def _policy_markdown(summary: dict[str, Any]) -> list[str]:
+    cp = summary["contact_policy"]
+    ai = summary["ai_review"]
+    lines = ["", "## Політика «Кому пишемо» (v2)", ""]
+    if ai["enabled"]:
+        lines.append(
+            f"Позицію клієнта (кроки 1-3) оцінювала модель `{ai['model']}`: кейсів {cp['judged_by_ai']}, "
+            f"помилок виклику {cp['ai_errors']}. Крок 4, строк і новий контакт після silent рахує код."
+        )
+    else:
+        lines.append(
+            "AI вимкнено: код вирішує лише точний STOP і кейси без слів клієнта, решта — `need_human`."
+        )
+    if cp["ai_error_kinds"]:
+        kinds = ", ".join(f"{k} {v}" for k, v in cp["ai_error_kinds"].items())
+        lines.append(f"Помилки виклику AI: {kinds}. Ці кейси не оцінено і вони на ручній перевірці.")
+    lines += ["", "| Мітка | Кейсів |", "|---|---|"]
+    lines.extend(f"| `{k}` | {v} |" for k, v in cp["labels"].items())
+    lines += ["", "Причини: " + ", ".join(f"`{k}` {v}" for k, v in cp["reasons"].items())]
+    lines.append("Впевненість: " + ", ".join(f"{k} — {v}" for k, v in cp["confidence"].items()))
+    lines.append(f"Крок 4 (прихована розмова після позиції клієнта): {len(cp['step4_cases'])}")
+    lines.append(f"Новий контакт після silent: {cp['new_contact_after_silent']}")
+    if cp["questions_for_owner"]:
+        lines.append(f"Питання до замовника: {', '.join(cp['questions_for_owner'])}")
+    lines.append(f"Кандидати: {', '.join(cp['candidates']) or '—'}")
+    drafts = cp["drafts"]
+    lines += ["", "### Чернетки SMS", ""]
+    if drafts["enabled"]:
+        lines.append(", ".join(f"`{k}` {v}" for k, v in drafts["by_status"].items()))
+        lines.append("Чернетки — у `results.xlsx`, аркуш «Чернетки SMS». SMS надсилає сейлз після перевірки.")
+    else:
+        lines.append("Вимкнено (`drafts.enabled: false`).")
+    lines += ["", "Мітки по кожному кейсу: аркуш «Мітки» / `labels.csv` (формат вкладки «Розмітка»)."]
+    return lines
