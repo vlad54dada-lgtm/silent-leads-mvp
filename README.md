@@ -63,8 +63,8 @@ uv run python -m silent_leads.cli run --input data/input/export.xlsx --config co
 export UV_PYTHON_PREFERENCE=only-system UV_PYTHON="C:/шлях/до/системного/python.exe" PYTHONUTF8=1
 ```
 
-Далі ті самі команди з `uv run --no-sync python -m ...`. `scripts/run.ps1` робить це сам: бере Python
-з `UV_PYTHON` або з `PATH`, підхоплює ключ AI зі змінних користувача і перед прогоном явно пише,
+Далі ті самі команди з `uv run --no-sync python -m ...`. `scripts/run.ps1` запускає через готове `.venv`,
+підхоплює ключ AI зі змінних користувача і перед прогоном явно пише,
 чи увімкнено AI в конфігу і куди підуть дані.
 
 ## Як приймається рішення
