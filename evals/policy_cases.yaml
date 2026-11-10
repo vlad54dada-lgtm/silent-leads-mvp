@@ -1,0 +1,202 @@
+# Синтетичні діалоги для перевірки політики v2 «Кому пишемо». ЖОДНОГО рядка з реальної вигрузки.
+# expected — мітка за кроками 1-3 (те, що вирішує AI): contact_ok | do_not_contact | need_human.
+# reason — очікувана категорія причини (для довідки у звіті).
+# Крок 4 (прихована розмова після позиції клієнта) рахує код, тут він не перевіряється.
+# Запуск: uv run python -m silent_leads.cli policy-eval --config config.yaml --output data/output
+description: >
+  Регресійний набір для промпта v2: жорсткий стоп і його виняток, остання позиція клієнта,
+  повернення після відмови, ціна, відкладання, порівняння, мовчання та пастки зі слів.
+cases:
+  # --- Крок 2: жорсткий стоп ---
+  - id: P01
+    expected: do_not_contact
+    reason: optout
+    note: Прохання не писати звичайними словами
+    dialogue:
+      - {speaker: sales, text: "Hi! Just checking in on the kitchen wallpaper quote."}
+      - {speaker: client, text: "Please do not text me anymore."}
+  - id: P02
+    expected: do_not_contact
+    reason: optout
+    note: Стоп діє навіть після позитиву та прохань про відгук
+    dialogue:
+      - {speaker: client, text: "The crew did a wonderful job, thank you!"}
+      - {speaker: sales, text: "So glad to hear it! Could you leave us a review?"}
+      - {speaker: sales, text: "Friendly reminder about the review :)"}
+      - {speaker: client, text: "Remove my number from your list."}
+  - id: P03
+    expected: do_not_contact
+    reason: negative_or_complaint
+    note: Скарга на нашу роботу
+    dialogue:
+      - {speaker: sales, text: "Hello, would you like to book the second room?"}
+      - {speaker: client, text: "No. The seams in the first room are already peeling and nobody came back to fix them."}
+  - id: P04
+    expected: do_not_contact
+    reason: negative_or_complaint
+    note: Погроза відгуком і «це спам»
+    dialogue:
+      - {speaker: sales, text: "Hi, following up once more on your estimate."}
+      - {speaker: client, text: "This is spam. One more message and I am writing a one-star review."}
+  - id: P05
+    expected: contact_ok
+    reason: postpone_or_comparing
+    note: Виняток кроку 2 — після стопу клієнт сам повернувся до проєкту
+    dialogue:
+      - {speaker: sales, text: "Hi! Any decision on the hallway?"}
+      - {speaker: client, text: "Stop texting me for now."}
+      - {speaker: client, text: "Hey, we are ready to look at this again. What does your schedule look like next month?"}
+  - id: P06
+    expected: do_not_contact
+    reason: optout
+    note: Після стопу лише автовідповідач — це не продовження розмови
+    dialogue:
+      - {speaker: sales, text: "Hello, checking in on your quote."}
+      - {speaker: client, text: "Take me off your contact list."}
+      - {speaker: sales, text: "", event: "CALL OUTBOUND HANGUP", no_transcript: true}
+      - {speaker: client, text: "I am driving right now and will get back to you later.", event: "SMS INBOUND"}
+
+  # --- Крок 3: остання позиція — не писати ---
+  - id: P07
+    expected: do_not_contact
+    reason: hired_other_or_done
+    dialogue:
+      - {speaker: sales, text: "Hi! Are you still planning the nursery mural?"}
+      - {speaker: client, text: "We ended up hiring a local installer, thanks anyway."}
+  - id: P08
+    expected: do_not_contact
+    reason: hired_other_or_done
+    note: Проєкт скасовано через продаж будинку
+    dialogue:
+      - {speaker: sales, text: "Hello, your estimate is still valid if you want to move ahead."}
+      - {speaker: client, text: "We are selling the house, so the project is off."}
+  - id: P09
+    expected: do_not_contact
+    reason: wrong_contact_or_service
+    note: Не той номер
+    dialogue:
+      - {speaker: sales, text: "Hi, this is the wallpaper team about your request."}
+      - {speaker: client, text: "You have the wrong person, I never requested anything."}
+  - id: P10
+    expected: do_not_contact
+    reason: wrong_contact_or_service
+    note: Потрібна послуга, якої ми не надаємо
+    dialogue:
+      - {speaker: sales, text: "We do installation only, the material is ordered by the client.", event: "CALL OUTBOUND SUCCESS"}
+      - {speaker: client, text: "Oh, then it is not for me, I was looking for a shop that sells the rolls.", event: "CALL OUTBOUND SUCCESS"}
+  - id: P11
+    expected: do_not_contact
+    reason: polite_no
+    note: Ввічлива відмова без причини
+    dialogue:
+      - {speaker: sales, text: "Hi! Would you like to schedule the install?"}
+      - {speaker: client, text: "Thanks, but we are going to pass."}
+
+  # --- Крок 3: остання позиція — писати ---
+  - id: P12
+    expected: contact_ok
+    reason: price
+    note: «Не цікаво», але причина — ціна
+    dialogue:
+      - {speaker: sales, text: "Here is the estimate for the two bedrooms."}
+      - {speaker: client, text: "We are not interested at that price, it is far more than we can spend."}
+  - id: P13
+    expected: contact_ok
+    reason: price
+    note: Відмовився через бюджет, а потім сам повернувся із запитанням
+    dialogue:
+      - {speaker: sales, text: "The quote is attached."}
+      - {speaker: client, text: "That is beyond what we set aside, so we are out."}
+      - {speaker: client, text: "Actually, when would you be able to start if we went ahead?"}
+  - id: P14
+    expected: contact_ok
+    reason: postpone_or_comparing
+    dialogue:
+      - {speaker: sales, text: "Hi! Do you want to pick a date?"}
+      - {speaker: client, text: "We are going to wait until after the holidays, I will reach out then."}
+  - id: P15
+    expected: contact_ok
+    reason: postpone_or_comparing
+    note: Порівнює квоти, а не найняв іншого
+    dialogue:
+      - {speaker: sales, text: "Any questions about the estimate?"}
+      - {speaker: client, text: "Another company is sending us numbers too, I will let you know after that."}
+  - id: P16
+    expected: contact_ok
+    reason: silent
+    note: Обговорив, отримав кошторис і замовк
+    dialogue:
+      - {speaker: client, text: "Here are the wall measurements and a photo."}
+      - {speaker: sales, text: "Thanks! The estimate is in your inbox."}
+      - {speaker: sales, text: "Hi, did you get a chance to look at it?"}
+
+  # --- Крок 1: чиї слова рахуються ---
+  - id: P17
+    expected: contact_ok
+    reason: silent
+    note: Службовий текст сейлза про STOP і реакція клієнта — не відписка
+    dialogue:
+      - {speaker: sales, text: "Hi! Your quote is ready. Reply STOP if you no longer wish to hear from us."}
+      - {speaker: client, text: "Liked \"Hi! Your quote is ready. Reply STOP if you no longer wish to hear from us.\""}
+  - id: P18
+    expected: contact_ok
+    reason: postpone_or_comparing
+    note: «stop by» = заїхати
+    dialogue:
+      - {speaker: sales, text: "When can we measure the stairwell?"}
+      - {speaker: client, text: "Feel free to stop by any afternoon this week, still deciding on the pattern though."}
+  - id: P19
+    expected: contact_ok
+    reason: silent
+    note: Автовідповідач — не позиція клієнта
+    dialogue:
+      - {speaker: sales, text: "Hello, following up on the estimate we sent."}
+      - {speaker: client, text: "Sorry, I can not answer at the moment. I will reply when I am available."}
+  - id: P20
+    expected: contact_ok
+    reason: silent
+    note: Привітання голосової пошти в транскрипті — не слова клієнта про проєкт
+    dialogue:
+      - {speaker: client, text: "Here is a picture of the dining room wall."}
+      - {speaker: sales, text: "Got it, the estimate is on its way."}
+      - {speaker: unknown, text: "You have reached the voicemail box. Please leave a message after the tone.", event: "CALL OUTBOUND VM"}
+
+  # --- Пастки ---
+  - id: P21
+    expected: contact_ok
+    reason: silent
+    note: «Вже зробили» стосується зняття старого шару, а не всієї роботи
+    dialogue:
+      - {speaker: sales, text: "Do you need us to strip the old wallpaper first?", event: "CALL OUTBOUND SUCCESS"}
+      - {speaker: client, text: "No need, we took the old paper down ourselves last weekend.", event: "CALL OUTBOUND SUCCESS"}
+      - {speaker: sales, text: "Great, then I will send the estimate for hanging only.", event: "CALL OUTBOUND SUCCESS"}
+  - id: P22
+    expected: contact_ok
+    reason: postpone_or_comparing
+    note: Перенесення візиту — не скасування проєкту
+    dialogue:
+      - {speaker: sales, text: "See you Thursday for the measurement."}
+      - {speaker: client, text: "I need to call off Thursday, something came up. Could we do the weekend instead?"}
+  - id: P23
+    expected: contact_ok
+    reason: postpone_or_comparing
+    note: Обурення цінами на матеріали — не скарга на нас
+    dialogue:
+      - {speaker: sales, text: "Any update on the project?"}
+      - {speaker: client, text: "We paused it, what the stores charge for rolls these days is outrageous."}
+  - id: P24
+    expected: contact_ok
+    reason: price
+    note: Питання про дешевший варіант — питання ціни, а не відмова
+    dialogue:
+      - {speaker: sales, text: "The estimate for the textured wallpaper is attached."}
+      - {speaker: client, text: "What would it cost if we just went with a plain painted wall instead?"}
+
+  # --- Неможливо визначити ---
+  - id: P25
+    expected: need_human
+    reason: unclear
+    note: Вирішальна репліка без визначеного автора
+    dialogue:
+      - {speaker: sales, text: "So shall I book the crew for you?", event: "CALL OUTBOUND SUCCESS"}
+      - {speaker: unknown, text: "No, forget it, we are done here.", event: "CALL OUTBOUND SUCCESS"}

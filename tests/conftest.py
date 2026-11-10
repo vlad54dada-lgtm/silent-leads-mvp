@@ -40,6 +40,7 @@ MESSAGE_HEADER = [
     "content_state",
     "text_part",
     "text",
+    "hidden_kind",
 ]
 
 SNAPSHOT_UTC = "2026-11-05T14:53:41Z"  # 06:53:41 in America/Los_Angeles -> control date 2026-11-05
@@ -82,6 +83,7 @@ def message(case_id: str, message_id: str, **overrides: Any) -> dict[str, Any]:
         "content_state": "text_available",
         "text_part": "1/1",
         "text": "Hello, following up on your request.",
+        "hidden_kind": None,
     }
     base.update(overrides)
     if base["direction"] == "INBOUND" and "role" not in overrides:
@@ -97,6 +99,8 @@ def build_workbook(
     control: Mapping[str, Any] | None = None,
     instruction: Mapping[str, Any] | None = None,
     auto_counters: bool = True,
+    reference_labels: Mapping[str, str] | None = None,
+    examples: Mapping[str, str] | None = None,
 ) -> Path:
     leads = [dict(row) for row in leads]
     messages = [dict(row) for row in messages]
@@ -153,6 +157,17 @@ def build_workbook(
             "reviewer_note",
         ]
     )
+
+    if reference_labels is not None:
+        ws_lab = wb.create_sheet("Розмітка")
+        ws_lab.append(["case_id", "label", "reason", "evidence_message_ids", "question_for_owner"])
+        for case_id, label in reference_labels.items():
+            ws_lab.append([case_id, label, None, None, None])
+    if examples is not None:
+        ws_ex = wb.create_sheet("Приклади")
+        ws_ex.append(["№", "case_id", "message_id", "Що там", "Мітка кейсу", "category", "Чому"])
+        for index, (case_id, label) in enumerate(examples.items(), start=1):
+            ws_ex.append([index, case_id, None, "synthetic", label, None, None])
 
     ws_ctrl = wb.create_sheet("Контроль")
     ws_ctrl.append(["Перевірка", "Результат"])

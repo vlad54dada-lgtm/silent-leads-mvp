@@ -13,13 +13,10 @@ Set-Location (Split-Path -Parent $PSScriptRoot)
 
 $env:UV_PYTHON_PREFERENCE = "only-system"
 $env:PYTHONUTF8 = "1"
-# Системний Python: з UV_PYTHON, якщо задано; інакше перший python.exe у PATH.
-if ([string]::IsNullOrEmpty($env:UV_PYTHON)) {
-    $py = Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -eq $py) {
-        throw "Не знайдено python.exe у PATH. Задайте змінну UV_PYTHON зі шляхом до системного Python 3.12+."
-    }
-    $env:UV_PYTHON = $py.Source
+# Запуск іде через уже створене .venv (--no-sync), тож інтерпретатор шукати не треба.
+# UV_PYTHON потрібен лише для першого `uv sync` на машині з Application Control — див. README, розділ Windows.
+if (-not (Test-Path ".venv")) {
+    throw "Немає .venv: спочатку виконайте uv sync (на машині з Application Control — з UV_PYTHON, див. README)."
 }
 
 # Яка саме змінна потрібна, визначає ai_review.api_key_env у конфігу; тут підхоплюємо обидві відомі.

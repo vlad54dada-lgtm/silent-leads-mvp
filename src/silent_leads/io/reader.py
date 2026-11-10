@@ -419,6 +419,7 @@ def _merge_parts(rows: list[tuple[int, RawRow]], issues: list[DataIssue]) -> Mes
         call_seconds=_parse_int(first.get("call_seconds")),
         content_state=content_state,
         text=text,
+        hidden_kind=_s(first.get("hidden_kind")),
         parts_expected=expected,
         parts_found=len(parts),
     )

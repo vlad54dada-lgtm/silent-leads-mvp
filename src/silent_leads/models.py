@@ -26,6 +26,14 @@ DECISION_PRIORITY: dict[Decision, int] = {
 }
 
 
+class PolicyLabel(StrEnum):
+    """The per-case label of the v2 contact policy («Кому пишемо»): may we write to this client at all?"""
+
+    CONTACT_OK = "contact_ok"
+    DO_NOT_CONTACT = "do_not_contact"
+    NEED_HUMAN = "need_human"
+
+
 class TemplateStatus(StrEnum):
     TEMPLATE_MISSING = "template_missing"
     TEST_TEMPLATE = "test_template"
@@ -102,6 +110,10 @@ class Message(BaseModel):
     call_seconds: int | None
     content_state: ContentState | None
     text: str | None
+    # Only for withheld_hidden: what kind of event the hidden text was (conversation,
+    # voicemail_greeting, client_voicemail, contact_details, platform_notification). None when
+    # the export has no such column or the cell is empty.
+    hidden_kind: str | None = None
     parts_expected: int = 1
     parts_found: int = 1
 
