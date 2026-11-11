@@ -150,6 +150,12 @@ class ContactPolicy(BaseModel):
     unknown_hidden_kind_is_risky: bool = True
     # call_result values meaning the call connected; such a call without a transcript is a risk.
     connected_call_results: tuple[str, ...] = ("SUCCESS",)
+    # New contact after silent. None follows the brief literally: ANY event after silent_since_crm
+    # sends a contact_ok lead to manual_review. A number N narrows it: an unanswered sales attempt
+    # within N hours of the silent timestamp is the closing attempt that came with the status, not
+    # a new contact. Still manual_review: an event from the client's side, the client's last
+    # position lying after silent, a sales event later than N hours (a re-touch was already made).
+    sales_followup_grace_hours: float | None = Field(default=None, ge=0)
 
 
 DEFAULT_FORBIDDEN_DRAFT_PATTERNS: tuple[str, ...] = (

@@ -22,7 +22,15 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from silent_leads.config import AiReview, Config, ContactPolicy
-from silent_leads.models import ContentState, DataIssue, Decision, IssueLevel, Message, PolicyLabel
+from silent_leads.models import (
+    ContentState,
+    DataIssue,
+    Decision,
+    Direction,
+    IssueLevel,
+    Message,
+    PolicyLabel,
+)
 from silent_leads.rules.ai_review import AiConfidence
 from silent_leads.rules.due_date import DueCheck
 from silent_leads.rules.history import is_exact_opt_out
@@ -355,6 +363,48 @@ def step4_risks(timeline: CaseTimeline, position_id: str | None, settings: Conta
     )
 
 
+def after_silent_blockers(
+    timeline: CaseTimeline, position_id: str | None, settings: ContactPolicy
+) -> tuple[tuple[str, ...], str]:
+    """Events after ``silent_since_crm`` that require a human -> (message ids, reason text).
+
+    With ``sales_followup_grace_hours`` unset every event after silent counts (the brief's literal
+    rule). With a number N only these count: an event that is not clearly outbound (the client's
+    side), a sales event later than N hours after silent (a re-touch was already made), and the
+    client's own last position lying after silent (the client really spoke after the status).
+    An unanswered sales attempt within N hours is the closing attempt that came with the status.
+    """
+    after = timeline.after_silent
+    if not after:
+        return (), ""
+    grace = settings.sales_followup_grace_hours
+    if grace is None:
+        ids = tuple(m.message_id for m in after)
+        return ids, f"новий контакт після silent ({len(after)} под.) — статус silent може бути неактуальним"
+    since = timeline.lead.silent_since_crm
+    assert since is not None  # after_silent is empty without it
+    client = [m for m in after if m.direction != Direction.OUTBOUND]
+    late = [
+        m
+        for m in after
+        if m.direction == Direction.OUTBOUND
+        and m.occurred_at_crm is not None
+        and (m.occurred_at_crm - since).total_seconds() > grace * 3600
+    ]
+    spoke = [m for m in after if m.message_id == position_id]
+    reasons: list[str] = []
+    if client:
+        reasons.append(f"подія з боку клієнта після silent ({len(client)})")
+    if spoke:
+        reasons.append("остання позиція клієнта висловлена вже після silent")
+    if late:
+        reasons.append(f"продавець контактував пізніше ніж через {grace:g} год після silent ({len(late)})")
+    ids = tuple(dict.fromkeys(m.message_id for m in [*client, *spoke, *late]))
+    if not ids:
+        return (), ""
+    return ids, "новий контакт після silent: " + "; ".join(reasons)
+
+
 def judge_case(
     timeline: CaseTimeline, judge: PolicyJudge, ai: AiReview, settings: ContactPolicy
 ) -> PolicyOutcome:
@@ -494,6 +544,14 @@ def decide_policy(
         elif position is not None and not evidence:
             evidence = (position,)
 
+    blocking_after, after_reason = after_silent_blockers(timeline, position, config.contact_policy)
+    grace = config.contact_policy.sales_followup_grace_hours
+    if new_contact and not blocking_after and grace is not None:
+        notes.append(
+            f"[silent] після silent лише спроби продавця ({len(after)} под.) у межах {grace:g} год — "
+            "не новий контакт"
+        )
+
     reason_text = REASON_TEXT.get(label_reason, label_reason)
     conf_text = _CONFIDENCE_TEXT.get(confidence, confidence)
     why = f"{reason_text}" + (f" (впевненість {conf_text})" if conf_text else "")
@@ -517,10 +575,10 @@ def decide_policy(
     elif errors:
         decision = Decision.MANUAL_REVIEW
         reason = f"проблеми даних: {', '.join(sorted({i.code for i in errors}))}"
-    elif new_contact:
+    elif blocking_after:
         decision = Decision.MANUAL_REVIEW
-        reason = f"новий контакт після silent ({len(after)} под.) — статус silent може бути неактуальним"
-        evidence = tuple(dict.fromkeys([*evidence, *(m.message_id for m in after)]))
+        reason = after_reason
+        evidence = tuple(dict.fromkeys([*evidence, *blocking_after]))
     elif due.due is None:
         decision, reason = Decision.MANUAL_REVIEW, _due_text(due)
     elif not due.due:
