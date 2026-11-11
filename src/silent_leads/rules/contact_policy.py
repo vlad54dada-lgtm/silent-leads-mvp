@@ -30,6 +30,7 @@ from silent_leads.models import (
     IssueLevel,
     Message,
     PolicyLabel,
+    Role,
 )
 from silent_leads.rules.ai_review import AiConfidence
 from silent_leads.rules.due_date import DueCheck
@@ -363,16 +364,29 @@ def step4_risks(timeline: CaseTimeline, position_id: str | None, settings: Conta
     )
 
 
+def _possible_client_lines(message: Message) -> int:
+    """Non-empty lines of an event that may be the client's: client or undetermined speaker."""
+    return sum(
+        1
+        for u in split_utterances(message)
+        if u.speaker in (Speaker.CLIENT, Speaker.UNKNOWN) and u.text.strip()
+    )
+
+
 def after_silent_blockers(
     timeline: CaseTimeline, position_id: str | None, settings: ContactPolicy
 ) -> tuple[tuple[str, ...], str]:
     """Events after ``silent_since_crm`` that require a human -> (message ids, reason text).
 
     With ``sales_followup_grace_hours`` unset every event after silent counts (the brief's literal
-    rule). With a number N only these count: an event that is not clearly outbound (the client's
-    side), a sales event later than N hours after silent (a re-touch was already made), and the
-    client's own last position lying after silent (the client really spoke after the status).
-    An unanswered sales attempt within N hours is the closing attempt that came with the status.
+    rule). With a number N an event is ignored only when ALL of this holds, checked by code and
+    not left to the model:
+    - it is certainly the sales side's: direction OUTBOUND and role sales;
+    - it happened within N hours of the silent timestamp (later = a re-touch was already made);
+    - it holds at most ``followup_max_client_lines`` lines that may be the client's (an answering
+      machine says one line; more is a conversation, and a refusal may sit in it);
+    - none of its lines has an undetermined speaker;
+    - it is not the message the model named as the client's last position.
     """
     after = timeline.after_silent
     if not after:
@@ -383,23 +397,33 @@ def after_silent_blockers(
         return ids, f"новий контакт після silent ({len(after)} под.) — статус silent може бути неактуальним"
     since = timeline.lead.silent_since_crm
     assert since is not None  # after_silent is empty without it
-    client = [m for m in after if m.direction != Direction.OUTBOUND]
+    not_sales = [m for m in after if not (m.direction == Direction.OUTBOUND and m.role == Role.SALES)]
     late = [
         m
         for m in after
-        if m.direction == Direction.OUTBOUND
+        if m not in not_sales
         and m.occurred_at_crm is not None
         and (m.occurred_at_crm - since).total_seconds() > grace * 3600
     ]
+    talked = [m for m in after if _possible_client_lines(m) > settings.followup_max_client_lines]
+    unknown = [
+        m for m in after if any(u.speaker == Speaker.UNKNOWN and u.text.strip() for u in split_utterances(m))
+    ]
     spoke = [m for m in after if m.message_id == position_id]
     reasons: list[str] = []
-    if client:
-        reasons.append(f"подія з боку клієнта після silent ({len(client)})")
+    if not_sales:
+        reasons.append(
+            f"подія після silent не є дією продавця: клієнт або невизначений автор ({len(not_sales)})"
+        )
+    if talked:
+        reasons.append(f"розмова з клієнтом після silent ({len(talked)})")
+    if unknown:
+        reasons.append(f"репліка з невизначеним автором після silent ({len(unknown)})")
     if spoke:
         reasons.append("остання позиція клієнта висловлена вже після silent")
     if late:
         reasons.append(f"продавець контактував пізніше ніж через {grace:g} год після silent ({len(late)})")
-    ids = tuple(dict.fromkeys(m.message_id for m in [*client, *spoke, *late]))
+    ids = tuple(dict.fromkeys(m.message_id for m in [*not_sales, *talked, *unknown, *spoke, *late]))
     if not ids:
         return (), ""
     return ids, "новий контакт після silent: " + "; ".join(reasons)

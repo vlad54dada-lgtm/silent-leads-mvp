@@ -153,9 +153,13 @@ class ContactPolicy(BaseModel):
     # New contact after silent. None follows the brief literally: ANY event after silent_since_crm
     # sends a contact_ok lead to manual_review. A number N narrows it: an unanswered sales attempt
     # within N hours of the silent timestamp is the closing attempt that came with the status, not
-    # a new contact. Still manual_review: an event from the client's side, the client's last
-    # position lying after silent, a sales event later than N hours (a re-touch was already made).
+    # a new contact. Still manual_review, all checked by code: an event that is not OUTBOUND with
+    # role sales, a conversation with the client, a line with an undetermined speaker, the client's
+    # last position lying after silent, a sales event later than N hours (a re-touch already made).
     sales_followup_grace_hours: float | None = Field(default=None, ge=0)
+    # Inside that window an event is an unanswered attempt only if it holds at most this many lines
+    # that may be the client's. An answering machine says one line; more is a conversation.
+    followup_max_client_lines: int = Field(default=1, ge=0)
 
 
 DEFAULT_FORBIDDEN_DRAFT_PATTERNS: tuple[str, ...] = (
