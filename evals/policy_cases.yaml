@@ -91,6 +91,13 @@ cases:
     dialogue:
       - {speaker: sales, text: "Hi! Would you like to schedule the install?"}
       - {speaker: client, text: "Thanks, but we are going to pass."}
+  - id: P26
+    expected: do_not_contact
+    reason: hired_other_or_done
+    note: Цей проєкт віддали іншому, хоча клієнт згадує майбутні. Тимчасове правило, є питання замовнику. Додано після аудиту збігів 2026-11-11
+    dialogue:
+      - {speaker: sales, text: "Hi! Do you want me to hold a date for the hallway install?"}
+      - {speaker: client, text: "Sorry for going quiet. My landlord already had his handyman do the hallway. I may have another room for you next year though."}
 
   # --- Крок 3: остання позиція — писати ---
   - id: P12

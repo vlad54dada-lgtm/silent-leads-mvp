@@ -230,7 +230,9 @@ template_status, reviewer_note` — повторюємо ці назви оди�
 - `do_not_contact` (висока впевненість і доказ із цього кейсу, або точний STOP) → `do_not_contact`;
 - `need_human` → `manual_review`;
 - `contact_ok` + новий контакт після silent → `manual_review` (опція `contact_policy.sales_followup_grace_hours`
-  звужує правило до подій з боку клієнта і пізніх дій продавця; вимкнена за замовчуванням, див. `docs/limitations.md`);
+  звужує правило: дія продавця без відповіді клієнта в межах вікна не рахується, а подія з боку клієнта, розмова
+  з клієнтом, репліка з невизначеним автором і пізня дія продавця рахуються; вимкнена за замовчуванням,
+  див. `docs/limitations.md`);
 - `contact_ok` + менше 7 днів від `silent_since_crm` → `skip_not_due`;
 - `contact_ok` + 7 днів і більше → `contact_candidate`.
 
