@@ -43,6 +43,9 @@ class PolicyRow:
     source: str = ""
     explanation: str = ""
     error: str = ""
+    # Synthetic set only: the case sits on a boundary, so contact_ok with HIGH confidence (the only
+    # answer that can make a lead a candidate) is a failure even though the label itself may be right.
+    must_not_be_candidate: bool = False
 
 
 def _norm(value: Any) -> str | None:
@@ -131,7 +134,14 @@ def evaluate_policy(rows: list[PolicyRow]) -> dict[str, Any]:
         for r in compared
         if r.expected == PolicyLabel.CONTACT_OK and r.predicted == PolicyLabel.DO_NOT_CONTACT
     ]
+    overconfident = [
+        r.case_id
+        for r in compared
+        if r.must_not_be_candidate and r.predicted == PolicyLabel.CONTACT_OK and r.confidence == "high"
+    ]
     return {
+        "guarded": sum(1 for r in rows if r.must_not_be_candidate),
+        "overconfident": overconfident,
         "reference": len(rows),
         "compared": len(compared),
         "missing_in_tool": sorted(r.case_id for r in rows if r.predicted is None),
@@ -173,6 +183,12 @@ def render_policy_markdown(report: dict[str, Any], title: str) -> str:
         f"- Хибні відмови (еталон contact_ok, інструмент do_not_contact): {len(report['false_refusals'])}"
         + (f" ({', '.join(report['false_refusals'])})" if report["false_refusals"] else ""),
     ]
+    if report.get("guarded"):
+        lines.append(
+            f"- Межові кейси, які не мають ставати кандидатом: {report['guarded']}; "
+            f"з них інструмент дозволив з високою впевненістю: **{len(report['overconfident'])}**"
+            + (f" ({', '.join(report['overconfident'])})" if report["overconfident"] else "")
+        )
     if report["missing_in_tool"]:
         lines.append(f"- Немає у виході інструмента: {', '.join(report['missing_in_tool'])}")
     lines += ["", "## Матриця (рядки — еталон, стовпці — інструмент)", ""]
@@ -215,6 +231,9 @@ class PolicyCase(BaseModel):
     expected: PolicyLabel
     reason: AiReason | None = None
     note: str = ""
+    # Boundary case: whatever the label, the lead must not become a candidate, so contact_ok needs
+    # a confidence below high (and a question for the owner).
+    not_candidate: bool = False
     dialogue: list[PolicyTurn] = Field(min_length=1)
 
 
@@ -282,6 +301,7 @@ def run_policy_eval(policy_set: PolicySet, judge: PolicyJudge, ai: AiReview) -> 
                 source="synthetic" + (f" (очікувана причина {case.reason.value})" if case.reason else ""),
                 explanation=a.explanation if a else "",
                 error=outcome.error or "",
+                must_not_be_candidate=case.not_candidate,
             )
         )
     return rows
