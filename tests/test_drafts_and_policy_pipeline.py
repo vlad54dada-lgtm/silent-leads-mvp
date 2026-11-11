@@ -23,6 +23,7 @@ from silent_leads.policy_eval import (
     load_policy_set,
     read_reference_labels,
     read_tool_labels,
+    render_policy_markdown,
     run_policy_eval,
 )
 from silent_leads.rules.ai_review import AiConfidence
@@ -302,6 +303,45 @@ def test_synthetic_policy_set_is_valid_and_covers_every_label_and_reason() -> No
     assert {c.expected for c in policy_set.cases} == set(PolicyLabel)
     reasons = {c.reason for c in policy_set.cases if c.reason is not None}
     assert reasons >= set(AiReason) - {AiReason.UNCLEAR}
+
+
+def test_boundary_case_allowed_with_high_confidence_is_reported() -> None:
+    """A boundary case may keep the label contact_ok, but only below high confidence."""
+    rows = [
+        PolicyRow("B1", "contact_ok", "contact_ok", confidence="high", must_not_be_candidate=True),
+        PolicyRow("B2", "contact_ok", "contact_ok", confidence="medium", must_not_be_candidate=True),
+        PolicyRow("B3", "do_not_contact", "do_not_contact", confidence="high", must_not_be_candidate=True),
+        PolicyRow("B4", "contact_ok", "contact_ok", confidence="high"),
+    ]
+    report = evaluate_policy(rows)
+    assert report["guarded"] == 3
+    assert report["overconfident"] == ["B1"]
+    assert report["accuracy"] == 1.0  # the label is right; the confidence is what fails
+    assert "(B1)" in render_policy_markdown(report, "t")
+
+
+def test_report_without_boundary_cases_does_not_mention_them() -> None:
+    report = evaluate_policy([PolicyRow("A1", "contact_ok", "contact_ok", confidence="high")])
+    assert report["guarded"] == 0
+    assert "Межові кейси" not in render_policy_markdown(report, "t")
+
+
+def test_synthetic_set_marks_its_boundary_cases() -> None:
+    policy_set = load_policy_set(ROOT / "evals" / "policy_cases.yaml")
+    guarded = {c.id for c in policy_set.cases if c.not_candidate}
+    assert guarded  # the audit of agreed labels added them
+    rows = run_policy_eval(policy_set, _HighContactOk(), AiReview(enabled=True))
+    assert set(evaluate_policy(rows)["overconfident"]) == guarded
+
+
+class _HighContactOk:
+    def judge(self, case_id: str, payload: str) -> PolicyAssessment:
+        return PolicyAssessment(
+            label=PolicyLabel.CONTACT_OK,
+            reason=AiReason.SILENT,
+            confidence=AiConfidence.HIGH,
+            explanation="x",
+        )
 
 
 def test_policy_eval_runs_the_judge_on_synthetic_ids() -> None:

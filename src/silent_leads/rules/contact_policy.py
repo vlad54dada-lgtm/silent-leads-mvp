@@ -178,7 +178,9 @@ substantive statement about the project. If they refused earlier and later came 
 themselves (asking about price, schedule, dates), the return counts.
 do_not_contact:
 - hired someone else or did it themselves; the work is already done; project cancelled, house
-  sold, moved (hired_other_or_done);
+  sold, moved (hired_other_or_done). This holds even when the client stays friendly, praises us
+  or mentions possible future jobs: THIS project went to someone else. Then also write a
+  question_for_owner (may we write about future projects?);
 - wrong number; they need a service we do not offer, e.g. material only without installation
   (wrong_contact_or_service);
 - a polite refusal without a reason: "no thanks", "we will pass", "not interested" (polite_no);
@@ -188,6 +190,16 @@ contact_ok:
 - thinking, postponing or comparing quotes: "hold off", "not ready", "after the holidays",
   "someone else is also quoting" (postpone_or_comparing);
 - simply stopped replying (silent).
+
+Boundary cases - here the label alone is not enough. Set confidence to "medium" (never "high")
+and write a question_for_owner when the client's last position is one of these:
+- the client explicitly asks us to stop following up or reminding and says they will get in
+  touch themselves ("no need to keep checking in, I will reach out when I'm ready"):
+  contact_ok, postpone_or_comparing. A plain "I'll let you know" or "I'll reach out when ready"
+  WITHOUT a request to stop the reminders is ordinary postponing and may be high;
+- the client says they are going with another contractor but has not hired anyone yet ("I'm
+  going to go with someone who can come out and measure"): do_not_contact,
+  hired_other_or_done.
 
 Traps - judge what the phrase is about, not the word: a remark that one part of the job (for
 example removal of the old layer) is already done is not "did it ourselves"; cancelling or
@@ -204,7 +216,7 @@ Output fields:
 - label: contact_ok | do_not_contact | need_human; reason: one category above, consistent with
   the label.
 - confidence: high only if a careful human reviewer would certainly agree; medium if they
-  probably would; low if it is a guess.
+  probably would or for a boundary case above; low if it is a guess.
 - last_client_position_message_id: the message_id of the client's last substantive statement
   about the project (null only if the client never said anything substantive).
 - evidence_message_ids: for do_not_contact the message(s) proving it; for contact_ok the last

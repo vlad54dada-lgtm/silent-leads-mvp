@@ -306,6 +306,13 @@ def _write_policy_report(report: dict[str, object], title: str, output_dir: Path
     assert isinstance(missed, list) and isinstance(mismatches, list)
     typer.echo(f"Порівняно: {report['compared']} з {report['reference']}; точність по мітках {pct}")
     typer.echo(f"Пропущені відмови: {len(missed)}" + (f" ({', '.join(missed)})" if missed else ""))
+    overconfident = report.get("overconfident", [])
+    assert isinstance(overconfident, list)
+    if report.get("guarded"):
+        typer.echo(
+            f"Межові кейси: {report['guarded']}; дозволено з високою впевненістю: {len(overconfident)}"
+            + (f" ({', '.join(overconfident)})" if overconfident else "")
+        )
     typer.echo(f"Розбіжностей: {len(mismatches)}")
     for m in mismatches:
         typer.echo(
