@@ -3,6 +3,8 @@
 # reason — очікувана категорія причини (для довідки у звіті).
 # not_candidate: true — межовий кейс: лід не має ставати кандидатом, тому contact_ok з високою впевненістю
 # вважається помилкою, навіть якщо сама мітка правильна.
+# candidate: true — навпаки: за правилом лід явно можна писати, тому відповідь має бути contact_ok з високою
+# впевненістю і без прапора «стоп, а потім сам повернувся».
 # Крок 4 (прихована розмова після позиції клієнта) рахує код, тут він не перевіряється.
 # Запуск: uv run python -m silent_leads.cli policy-eval --config config.yaml --output data/output
 description: >
@@ -57,6 +59,20 @@ cases:
       - {speaker: client, text: "Take me off your contact list."}
       - {speaker: sales, text: "", event: "CALL OUTBOUND HANGUP", no_transcript: true}
       - {speaker: client, text: "I am driving right now and will get back to you later.", event: "SMS INBOUND"}
+  - id: P27
+    expected: do_not_contact
+    reason: optout
+    note: Клієнт прямо просить не нагадувати і обіцяє написати сам — це прохання не писати. Правило координатора 2026-11-12
+    dialogue:
+      - {speaker: sales, text: "Hi! Just checking in again on the dining room mural."}
+      - {speaker: client, text: "Thanks, but please hold the reminders for now. We are waiting on the insurance payout, I will text you myself when we are ready."}
+  - id: P33
+    expected: do_not_contact
+    reason: optout
+    note: М'яке ввічливе прохання не нагадувати теж є проханням не писати. Додано після генерального прогону 2026-11-12
+    dialogue:
+      - {speaker: sales, text: "Hi! Checking in once more about the powder room."}
+      - {speaker: client, text: "I appreciate you following up, but I think it is better if I get back to you myself once we close on the house."}
 
   # --- Крок 3: остання позиція — не писати ---
   - id: P07
@@ -104,10 +120,18 @@ cases:
     expected: do_not_contact
     reason: hired_other_or_done
     not_candidate: true
-    note: Намір піти до іншого виконавця без факту найму. Межовий кейс, є питання замовнику. Додано після аудиту збігів 2026-11-11
+    note: Намір піти до іншого виконавця без причини, яку ми можемо змінити, і без факту найму. Межовий кейс, є питання замовнику
     dialogue:
-      - {speaker: sales, text: "The earliest install slot we have is in five weeks."}
-      - {speaker: client, text: "That is too long for us. I think I will go with a crew that can start sooner."}
+      - {speaker: sales, text: "Hi! Shall I put your accent wall on the schedule?"}
+      - {speaker: client, text: "Thanks, but I think I will use the company my neighbour had last year."}
+  - id: P32
+    expected: do_not_contact
+    reason: hired_other_or_done
+    note: Відмова, після якої є пропущений дзвінок клієнта. Модель лишає «не писати»; код після цього ставить need_human (це перевіряють unit-тести). Правило координатора 2026-11-12
+    dialogue:
+      - {speaker: sales, text: "Hello, your estimate for the stairwell is ready."}
+      - {speaker: client, text: "Thank you, but we decided to hang it ourselves."}
+      - {speaker: client, text: "", event: "CALL INBOUND HANGUP", no_transcript: true}
 
   # --- Крок 3: остання позиція — писати ---
   - id: P12
@@ -208,21 +232,40 @@ cases:
     dialogue:
       - {speaker: sales, text: "The estimate for the textured wallpaper is attached."}
       - {speaker: client, text: "What would it cost if we just went with a plain painted wall instead?"}
-  - id: P27
-    expected: contact_ok
-    reason: postpone_or_comparing
-    not_candidate: true
-    note: Клієнт просить не нагадувати і обіцяє написати сам. Проєкт відкритий, але кандидатом лід бути не може. Додано після аудиту збігів 2026-11-11
-    dialogue:
-      - {speaker: sales, text: "Hi! Just checking in again on the dining room mural."}
-      - {speaker: client, text: "Thanks, but please hold the reminders for now. We are waiting on the insurance payout, I will text you myself when we are ready."}
   - id: P29
     expected: contact_ok
     reason: postpone_or_comparing
-    note: Контроль до P27. Звичайне «напишу сам» без прохання не нагадувати — відкладання
+    candidate: true
+    note: Контроль до P27. Звичайне «напишу сам» без прохання не нагадувати — відкладання, одне мʼяке нагадування
     dialogue:
       - {speaker: sales, text: "Hi! Any decision on the bedroom accent wall?"}
       - {speaker: client, text: "Not yet, we are still picking the pattern. I will reach out when we are ready."}
+  - id: P34
+    expected: contact_ok
+    reason: postpone_or_comparing
+    candidate: true
+    note: Контроль до P33. «Звʼяжусь, якщо вирішимо» без слова про наші нагадування — відкладання
+    dialogue:
+      - {speaker: sales, text: "Hello! Any thoughts on the estimate for the stairwell?"}
+      - {speaker: client, text: "Plans changed for the moment. If we go ahead later, I will contact you."}
+  - id: P30
+    expected: contact_ok
+    reason: postpone_or_comparing
+    candidate: true
+    note: Різка фраза без прохання не писати, потім клієнт сам повернувся — це не жорсткий стоп. Правило координатора 2026-11-12
+    dialogue:
+      - {speaker: sales, text: "The mural you picked needs a primer coat first, I can add it to the quote."}
+      - {speaker: client, text: "Quit wasting my time, I will take this somewhere else."}
+      - {speaker: sales, text: "Understood, sorry for the confusion."}
+      - {speaker: client, text: "Hi, are you still able to do the mural next month?"}
+  - id: P31
+    expected: contact_ok
+    reason: postpone_or_comparing
+    candidate: true
+    note: Відмова через наш процес, який можна змінити, і нікого ще не найнято — пропонуємо виїзд. Правило координатора 2026-11-12
+    dialogue:
+      - {speaker: sales, text: "To finalize the quote, please text me a few photos of the wall and its width and height."}
+      - {speaker: client, text: "I have no time to take photos and measure things. I would rather use a company that sends someone over to look."}
 
   # --- Неможливо визначити ---
   - id: P25

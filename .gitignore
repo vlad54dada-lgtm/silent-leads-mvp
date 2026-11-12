@@ -9,6 +9,7 @@ data/
 config.yaml
 .env
 .env.*
+!.env.example
 
 # python
 .venv/

@@ -326,12 +326,36 @@ def test_report_without_boundary_cases_does_not_mention_them() -> None:
     assert "Межові кейси" not in render_policy_markdown(report, "t")
 
 
+def test_case_that_must_pass_as_a_candidate_is_reported_when_held_back() -> None:
+    rows = [
+        PolicyRow("C1", "contact_ok", "contact_ok", confidence="high", must_be_candidate=True),
+        PolicyRow("C2", "contact_ok", "contact_ok", confidence="medium", must_be_candidate=True),
+        PolicyRow(
+            "C3",
+            "contact_ok",
+            "contact_ok",
+            confidence="high",
+            must_be_candidate=True,
+            stop_then_resumed=True,
+        ),
+        PolicyRow("C4", "contact_ok", "do_not_contact", confidence="high", must_be_candidate=True),
+        PolicyRow("C5", "contact_ok", "contact_ok", confidence="medium"),
+    ]
+    report = evaluate_policy(rows)
+    assert report["expected_candidates"] == 4
+    assert report["held_back"] == ["C2", "C3", "C4"]
+    assert "(C2, C3, C4)" in render_policy_markdown(report, "t")
+
+
 def test_synthetic_set_marks_its_boundary_cases() -> None:
     policy_set = load_policy_set(ROOT / "evals" / "policy_cases.yaml")
     guarded = {c.id for c in policy_set.cases if c.not_candidate}
-    assert guarded  # the audit of agreed labels added them
-    rows = run_policy_eval(policy_set, _HighContactOk(), AiReview(enabled=True))
-    assert set(evaluate_policy(rows)["overconfident"]) == guarded
+    expected = {c.id for c in policy_set.cases if c.candidate}
+    assert guarded and expected  # the audit and the coordinator's rules added them
+    assert not guarded & expected
+    report = evaluate_policy(run_policy_eval(policy_set, _HighContactOk(), AiReview(enabled=True)))
+    assert set(report["overconfident"]) == guarded
+    assert report["expected_candidates"] == len(expected) and report["held_back"] == []
 
 
 class _HighContactOk:

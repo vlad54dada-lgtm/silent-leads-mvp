@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -17,6 +18,7 @@ import typer
 
 from silent_leads.ai_eval import load_eval_set, run_ai_eval
 from silent_leads.config import Config, load_config
+from silent_leads.env_file import load_env_file
 from silent_leads.evaluation import evaluate, read_labels_csv, render_evaluation_markdown
 from silent_leads.io.reader import Export, ExportFormatError, read_export
 from silent_leads.io.writer import write_outputs
@@ -76,6 +78,8 @@ CASES_OPTION = typer.Option(
 @app.callback()
 def _root() -> None:
     """Silent Leads Retouch MVP — офлайн-обробка вигрузки silent-лідів."""
+    # The API key may live in a local .env file; variables already set in the environment win.
+    load_env_file()
 
 
 def _load_config(path: Path) -> Config:
@@ -145,11 +149,13 @@ def run(
     """Повний прогін: рішення по кожному кейсу, results.xlsx/csv, data_issues.csv, ai_labels.csv, summary."""
     config = _load_config(config_path)
     export = _read_checked(input_path, config)
+    started = time.perf_counter()
     try:
         result = run_pipeline(config, export)
     except SnapshotUnknownError as exc:
         typer.secho(f"Знімок: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(EXIT_SNAPSHOT) from exc
+    elapsed = int(time.perf_counter() - started)  # console only: output files stay byte-identical
 
     summary = build_summary(config, result)
     written = write_outputs(
@@ -200,6 +206,7 @@ def run(
         )
         labels = ", ".join(f"{k}={v}" for k, v in ai["by_label"].items())
         typer.echo(f"  мітки: {labels}")
+    typer.echo(f"Час прогону: {elapsed // 60} хв {elapsed % 60} с")
     typer.echo("Записано:")
     for path in written:
         typer.echo(f"  {path}")
@@ -312,6 +319,13 @@ def _write_policy_report(report: dict[str, object], title: str, output_dir: Path
         typer.echo(
             f"Межові кейси: {report['guarded']}; дозволено з високою впевненістю: {len(overconfident)}"
             + (f" ({', '.join(overconfident)})" if overconfident else "")
+        )
+    held_back = report.get("held_back", [])
+    assert isinstance(held_back, list)
+    if report.get("expected_candidates"):
+        typer.echo(
+            f"Мають проходити як кандидати: {report['expected_candidates']}; не пропущено: {len(held_back)}"
+            + (f" ({', '.join(held_back)})" if held_back else "")
         )
     typer.echo(f"Розбіжностей: {len(mismatches)}")
     for m in mismatches:

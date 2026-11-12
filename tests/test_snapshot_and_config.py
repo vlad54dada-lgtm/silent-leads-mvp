@@ -46,6 +46,31 @@ def test_naive_snapshot_is_rejected(workbook_path: Path) -> None:
         Config(snapshot_utc=datetime(2026, 11, 5, 14, 53))
 
 
+def test_demo_config_is_the_example_with_the_ai_parts_switched_on() -> None:
+    root = Path(__file__).resolve().parents[1]
+    example, demo = load_config(root / "config.example.yaml"), load_config(root / "config.demo.yaml")
+    assert demo.policy == "v2"
+    assert demo.ai_review.enabled and demo.drafts.enabled
+    assert demo.ai_review.base_url == "https://openrouter.ai/api"
+    assert demo.ai_review.api_key_env == "OPENROUTER_API_KEY"  # the NAME of the variable, never a key
+    assert demo.ai_review.cache_dir == example.ai_review.cache_dir
+
+    switched_back = demo.model_copy(
+        update={
+            "ai_review": demo.ai_review.model_copy(
+                update={
+                    "enabled": False,
+                    "model": example.ai_review.model,
+                    "base_url": example.ai_review.base_url,
+                    "api_key_env": example.ai_review.api_key_env,
+                }
+            ),
+            "drafts": demo.drafts.model_copy(update={"enabled": False}),
+        }
+    )
+    assert switched_back == example  # nothing else differs: the same rules, phrases and templates
+
+
 def test_config_defaults_are_safe_and_example_loads(tmp_path: Path) -> None:
     config = Config()
     assert config.first_touch_delay_days == 7
@@ -57,6 +82,11 @@ def test_config_defaults_are_safe_and_example_loads(tmp_path: Path) -> None:
     assert example.phrases.exact_opt_out == ("stop", "unsubscribe")
     assert "stop by" not in example.phrases.hints and "not interested" in example.phrases.hints
     assert example.ai_review.enabled is False  # the example never turns the external call on
+
+    # Rules approved by the coordinator on 2026-11-12 are the defaults, in code and in the example.
+    assert config.contact_policy.sales_followup_grace_hours == 3
+    assert config.contact_policy.client_event_after_refusal_needs_human is True
+    assert example.contact_policy == config.contact_policy
 
     with pytest.raises(ValidationError):
         Config(crm_timezone="Mars/Olympus")

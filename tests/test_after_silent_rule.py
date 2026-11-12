@@ -1,4 +1,4 @@
-"""New contact after silent: the brief's literal rule (default) and the narrowed rule with a grace window.
+"""New contact after silent: the narrowed rule with a grace window (default, 3 hours) and the literal rule.
 
 The narrowed rule must not lean on the model: whatever could hide a client's reaction after
 silent (a conversation, an unclear author, a wrong role) is caught by code.
@@ -32,11 +32,22 @@ def _call(message_id: str, occurred: str, text: str) -> Message:
     )
 
 
-def test_by_default_any_event_after_silent_is_manual_review() -> None:
+LITERAL = _config(sales_followup_grace_hours=None)  # the first brief: any event after silent
+
+
+def test_literal_rule_sends_any_event_after_silent_to_manual_review() -> None:
     sales_after = _msg("M3", "2026-10-20 11:00:00", text="Last check-in on your quote!")
-    verdict = _run(_timeline([SALES, CLIENT, sales_after]), _assessment())
+    verdict = _run(_timeline([SALES, CLIENT, sales_after]), _assessment(), config=LITERAL)
     assert verdict.decision == Decision.MANUAL_REVIEW
     assert verdict.new_contact_after_silent
+
+
+def test_three_hour_window_is_the_default() -> None:
+    assert ContactPolicy().sales_followup_grace_hours == 3
+    inside = _msg("M3", "2026-10-20 11:00:00", text="Last check-in on your quote!")
+    late = _msg("M3", "2026-10-20 13:00:01", text="Last check-in on your quote!")
+    assert _run(_timeline([SALES, CLIENT, inside]), _assessment()).decision == Decision.CONTACT_CANDIDATE
+    assert _run(_timeline([SALES, CLIENT, late]), _assessment()).decision == Decision.MANUAL_REVIEW
 
 
 def test_unanswered_sales_attempt_inside_the_window_is_not_a_new_contact() -> None:
@@ -169,7 +180,7 @@ def test_zero_window_keeps_everything_after_the_silent_second_in_manual_review()
 
 def test_event_in_the_same_second_as_silent_is_not_after_silent() -> None:
     same_second = _msg("M3", "2026-10-20 10:00:00", text="Closing message")
-    verdict = _run(_timeline([SALES, CLIENT, same_second]), _assessment())  # the literal rule
+    verdict = _run(_timeline([SALES, CLIENT, same_second]), _assessment(), config=LITERAL)
     assert not verdict.new_contact_after_silent
     assert verdict.decision == Decision.CONTACT_CANDIDATE
 

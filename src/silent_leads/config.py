@@ -150,16 +150,22 @@ class ContactPolicy(BaseModel):
     unknown_hidden_kind_is_risky: bool = True
     # call_result values meaning the call connected; such a call without a transcript is a risk.
     connected_call_results: tuple[str, ...] = ("SUCCESS",)
-    # New contact after silent. None follows the brief literally: ANY event after silent_since_crm
-    # sends a contact_ok lead to manual_review. A number N narrows it: an unanswered sales attempt
-    # within N hours of the silent timestamp is the closing attempt that came with the status, not
-    # a new contact. Still manual_review, all checked by code: an event that is not OUTBOUND with
-    # role sales, a conversation with the client, a line with an undetermined speaker, the client's
-    # last position lying after silent, a sales event later than N hours (a re-touch already made).
-    sales_followup_grace_hours: float | None = Field(default=None, ge=0)
+    # New contact after silent. A number N (default 3, approved by the coordinator on 2026-11-12):
+    # an unanswered sales attempt within N hours of the silent timestamp is the closing attempt
+    # that came with the status, not a new contact. Still manual_review, all checked by code: an
+    # event that is not OUTBOUND with role sales, a conversation with the client, a line with an
+    # undetermined speaker, the client's last position lying after silent, a sales event later than
+    # N hours (a re-touch already made). None follows the first brief literally: ANY event after
+    # silent_since_crm sends a contact_ok lead to manual_review.
+    sales_followup_grace_hours: float | None = Field(default=3, ge=0)
     # Inside that window an event is an unanswered attempt only if it holds at most this many lines
     # that may be the client's. An answering machine says one line; more is a conversation.
     followup_max_client_lines: int = Field(default=1, ge=0)
+    # A step 3 refusal (hired someone else, did it themselves, polite no, wrong service) followed
+    # by an inbound event from the client with no text (a missed call, a hang-up): nobody knows
+    # what they wanted, so the case goes to a human instead of do_not_contact. Hard stops (opt-out,
+    # complaint) are not reopened this way.
+    client_event_after_refusal_needs_human: bool = True
 
 
 DEFAULT_FORBIDDEN_DRAFT_PATTERNS: tuple[str, ...] = (

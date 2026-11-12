@@ -190,3 +190,9 @@ def build_workbook(
 @pytest.fixture
 def workbook_path(tmp_path: Path) -> Path:
     return tmp_path / "export.xlsx"
+
+
+@pytest.fixture(autouse=True)
+def _no_local_env_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Tests never read a developer's real ``.env``: the CLI is pointed at a file that does not exist."""
+    monkeypatch.setenv("SILENT_LEADS_ENV_FILE", str(tmp_path / "absent.env"))
