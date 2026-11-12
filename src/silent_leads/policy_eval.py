@@ -46,6 +46,10 @@ class PolicyRow:
     # Synthetic set only: the case sits on a boundary, so contact_ok with HIGH confidence (the only
     # answer that can make a lead a candidate) is a failure even though the label itself may be right.
     must_not_be_candidate: bool = False
+    # Synthetic set only: the opposite check. The rule says such a lead is plainly contactable, so
+    # anything but contact_ok with HIGH confidence and no stop-then-resumed flag is a failure.
+    must_be_candidate: bool = False
+    stop_then_resumed: bool = False
 
 
 def _norm(value: Any) -> str | None:
@@ -139,9 +143,17 @@ def evaluate_policy(rows: list[PolicyRow]) -> dict[str, Any]:
         for r in compared
         if r.must_not_be_candidate and r.predicted == PolicyLabel.CONTACT_OK and r.confidence == "high"
     ]
+    held_back = [
+        r.case_id
+        for r in compared
+        if r.must_be_candidate
+        and not (r.predicted == PolicyLabel.CONTACT_OK and r.confidence == "high" and not r.stop_then_resumed)
+    ]
     return {
         "guarded": sum(1 for r in rows if r.must_not_be_candidate),
         "overconfident": overconfident,
+        "expected_candidates": sum(1 for r in rows if r.must_be_candidate),
+        "held_back": held_back,
         "reference": len(rows),
         "compared": len(compared),
         "missing_in_tool": sorted(r.case_id for r in rows if r.predicted is None),
@@ -189,6 +201,12 @@ def render_policy_markdown(report: dict[str, Any], title: str) -> str:
             f"з них інструмент дозволив з високою впевненістю: **{len(report['overconfident'])}**"
             + (f" ({', '.join(report['overconfident'])})" if report["overconfident"] else "")
         )
+    if report.get("expected_candidates"):
+        lines.append(
+            f"- Кейси, які за правилом мають проходити як кандидати: {report['expected_candidates']}; "
+            f"з них інструмент не пропустив: **{len(report['held_back'])}**"
+            + (f" ({', '.join(report['held_back'])})" if report["held_back"] else "")
+        )
     if report["missing_in_tool"]:
         lines.append(f"- Немає у виході інструмента: {', '.join(report['missing_in_tool'])}")
     lines += ["", "## Матриця (рядки — еталон, стовпці — інструмент)", ""]
@@ -234,6 +252,9 @@ class PolicyCase(BaseModel):
     # Boundary case: whatever the label, the lead must not become a candidate, so contact_ok needs
     # a confidence below high (and a question for the owner).
     not_candidate: bool = False
+    # The opposite: the rule says this lead is plainly contactable, so the judge must answer
+    # contact_ok with high confidence and without the stop-then-resumed flag.
+    candidate: bool = False
     dialogue: list[PolicyTurn] = Field(min_length=1)
 
 
@@ -302,6 +323,8 @@ def run_policy_eval(policy_set: PolicySet, judge: PolicyJudge, ai: AiReview) -> 
                 explanation=a.explanation if a else "",
                 error=outcome.error or "",
                 must_not_be_candidate=case.not_candidate,
+                must_be_candidate=case.candidate,
+                stop_then_resumed=bool(a and a.stop_then_resumed),
             )
         )
     return rows

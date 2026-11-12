@@ -54,8 +54,16 @@ class AiReason(StrEnum):
 
 # Reason codes produced by code only (never by the model).
 REASON_HIDDEN_CONVERSATION = "hidden_conversation"
+REASON_CLIENT_EVENT_AFTER_REFUSAL = "client_event_after_refusal"
 REASON_AI_ERROR = "ai_error"
 REASON_NO_AI = "no_ai"
+
+# Step 3 refusals that a later wordless event from the client may reopen (a missed call two days
+# after "we will do it ourselves": nobody knows what they wanted). Hard stops are not in this set:
+# an opt-out or a complaint holds whatever comes after it.
+REOPENABLE_REFUSALS: frozenset[str] = frozenset(
+    {AiReason.HIRED_OTHER_OR_DONE, AiReason.POLITE_NO, AiReason.WRONG_CONTACT_OR_SERVICE}
+)
 
 REASON_LABEL: dict[AiReason, PolicyLabel] = {
     AiReason.OPTOUT: PolicyLabel.DO_NOT_CONTACT,
@@ -81,6 +89,9 @@ REASON_TEXT: dict[str, str] = {
     AiReason.UNCLEAR: "позицію клієнта визначити не вдалося",
     REASON_HIDDEN_CONVERSATION: (
         "після останньої позиції клієнта є прихована розмова або дзвінок без транскрипту"
+    ),
+    REASON_CLIENT_EVENT_AFTER_REFUSAL: (
+        "після відмови є вхідна подія клієнта без тексту — невідомо, чого він хотів"
     ),
     REASON_AI_ERROR: "AI-оцінку не виконано",
     REASON_NO_AI: "позицію клієнта має оцінити AI, а він вимкнений",
@@ -165,13 +176,22 @@ Thumbtack / Yelp; "stop by" meaning "come over".
 
 STEP 2 - hard stop anywhere in the history -> do_not_contact, reason "optout" or
 "negative_or_complaint":
-- STOP or UNSUBSCRIBE as a message; asking not to text / not to call / to delete the number
-  (optout);
+- STOP or UNSUBSCRIBE as a message; asking not to text / not to call / to delete the number;
+  explicitly telling us to stop following up or reminding because they will get in touch
+  themselves ("please stop the reminders, I will reach out myself") (optout). A plain "I'll let
+  you know", "I'll be in touch if we decide", "will reach out when ready" WITHOUT a request to
+  stop the reminders is NOT a stop: it is ordinary postponing (step 3, contact_ok);
 - rudeness, "this is spam", threatening a review or a complaint, a complaint about our work or
-  about the sales rep (negative_or_complaint).
-A hard stop holds even if something positive came later. EXCEPTION: after the stop the client
-THEMSELVES resumed talking about the project (not an auto-reply, not merely answering a sales
-call). Then set stop_then_resumed = true, go to step 3, and write a question_for_owner.
+  about the sales rep (negative_or_complaint). Sharp words about the price alone are a price
+  objection (step 3), not a hard stop.
+A hard stop holds even if something positive came later. Two EXCEPTIONS, both only when the
+client THEMSELVES resumed talking about the project afterwards (not an auto-reply, not merely
+answering a sales call):
+- after a real opt-out (STOP, "do not text me", "stop the reminders"): set stop_then_resumed =
+  true, go to step 3, and write a question_for_owner;
+- after mere sharpness or irritation with NO request to stop writing ("quit wasting my time,
+  I'll take this elsewhere"): it is no longer a hard stop, leave stop_then_resumed = false and
+  decide by step 3 as usual.
 
 STEP 3 - the client's LAST position on the project decides. Find the client's last
 substantive statement about the project. If they refused earlier and later came back by
@@ -191,15 +211,14 @@ contact_ok:
   "someone else is also quoting" (postpone_or_comparing);
 - simply stopped replying (silent).
 
-Boundary cases - here the label alone is not enough. Set confidence to "medium" (never "high")
-and write a question_for_owner when the client's last position is one of these:
-- the client explicitly asks us to stop following up or reminding and says they will get in
-  touch themselves ("no need to keep checking in, I will reach out when I'm ready"):
-  contact_ok, postpone_or_comparing. A plain "I'll let you know" or "I'll reach out when ready"
-  WITHOUT a request to stop the reminders is ordinary postponing and may be high;
-- the client says they are going with another contractor but has not hired anyone yet ("I'm
-  going to go with someone who can come out and measure"): do_not_contact,
-  hired_other_or_done.
+Process objection - not a refusal. The client says they will go elsewhere because of OUR
+PROCESS, which we can change (they do not want to send photos or measurements, they want someone
+to come out and look), and they have not hired anyone yet: contact_ok, postpone_or_comparing.
+
+Boundary case - here the label alone is not enough. The client says they are going with another
+contractor for a reason we cannot change, or gives no reason, but has not hired anyone yet ("I
+think I'll use the company my neighbour had"): do_not_contact, hired_other_or_done, confidence
+"medium" (never "high"), and write a question_for_owner.
 
 Traps - judge what the phrase is about, not the word: a remark that one part of the job (for
 example removal of the old layer) is already done is not "did it ourselves"; cancelling or
@@ -216,7 +235,7 @@ Output fields:
 - label: contact_ok | do_not_contact | need_human; reason: one category above, consistent with
   the label.
 - confidence: high only if a careful human reviewer would certainly agree; medium if they
-  probably would or for a boundary case above; low if it is a guess.
+  probably would or for the boundary case above; low if it is a guess.
 - last_client_position_message_id: the message_id of the client's last substantive statement
   about the project (null only if the client never said anything substantive).
 - evidence_message_ids: for do_not_contact the message(s) proving it; for contact_ok the last
@@ -373,6 +392,26 @@ def step4_risks(timeline: CaseTimeline, position_id: str | None, settings: Conta
         m.message_id
         for m in timeline.messages[start:]
         if _is_risky_hidden(m, settings) or _is_connected_call_without_text(m, settings)
+    )
+
+
+def wordless_client_events_after(timeline: CaseTimeline, anchor_id: str) -> tuple[str, ...]:
+    """Inbound events from the client's side with no readable text AFTER the given message.
+
+    A missed call, a hang-up, a hidden voicemail: the client did something, and nobody knows what
+    they wanted. Events of the sales side and anything with text are not counted here.
+    """
+    start: int | None = None
+    for index, message in enumerate(timeline.messages):
+        if message.message_id == anchor_id:
+            start = index + 1
+            break
+    if start is None:
+        return ()
+    return tuple(
+        m.message_id
+        for m in timeline.messages[start:]
+        if m.direction == Direction.INBOUND and m.role != Role.SALES and not m.has_text
     )
 
 
@@ -568,6 +607,25 @@ def decide_policy(
             question = DEFAULT_QUESTIONS["stop_resumed"]
         if a.reason == AiReason.POLITE_NO and not question:
             question = DEFAULT_QUESTIONS[AiReason.POLITE_NO]
+
+        # A step 3 refusal followed by a wordless event from the client: nobody knows what they
+        # wanted, so a human decides. The anchor is the refusal itself: the client's last position,
+        # or the last piece of evidence when the model named no position.
+        anchor = position or (evidence[-1] if evidence else None)
+        if (
+            config.contact_policy.client_event_after_refusal_needs_human
+            and label == PolicyLabel.DO_NOT_CONTACT
+            and label_reason in REOPENABLE_REFUSALS
+            and anchor is not None
+        ):
+            reopened = wordless_client_events_after(timeline, anchor)
+            if reopened:
+                notes.append(
+                    f"[правило] відмова в {anchor}, після неї вхідна подія клієнта без тексту: "
+                    f"{', '.join(reopened)}"
+                )
+                evidence = tuple(dict.fromkeys([*evidence, *reopened]))
+                label, label_reason = PolicyLabel.NEED_HUMAN, REASON_CLIENT_EVENT_AFTER_REFUSAL
 
     if label == PolicyLabel.CONTACT_OK:
         risks = step4_risks(timeline, position, config.contact_policy)
