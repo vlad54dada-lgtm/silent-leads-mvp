@@ -66,6 +66,13 @@ cases:
     dialogue:
       - {speaker: sales, text: "Hi! Just checking in again on the dining room mural."}
       - {speaker: client, text: "Thanks, but please hold the reminders for now. We are waiting on the insurance payout, I will text you myself when we are ready."}
+  - id: P33
+    expected: do_not_contact
+    reason: optout
+    note: М'яке ввічливе прохання не нагадувати теж є проханням не писати. Додано після генерального прогону 2026-11-12
+    dialogue:
+      - {speaker: sales, text: "Hi! Checking in once more about the powder room."}
+      - {speaker: client, text: "I appreciate you following up, but I think it is better if I get back to you myself once we close on the house."}
 
   # --- Крок 3: остання позиція — не писати ---
   - id: P07
@@ -233,6 +240,14 @@ cases:
     dialogue:
       - {speaker: sales, text: "Hi! Any decision on the bedroom accent wall?"}
       - {speaker: client, text: "Not yet, we are still picking the pattern. I will reach out when we are ready."}
+  - id: P34
+    expected: contact_ok
+    reason: postpone_or_comparing
+    candidate: true
+    note: Контроль до P33. «Звʼяжусь, якщо вирішимо» без слова про наші нагадування — відкладання
+    dialogue:
+      - {speaker: sales, text: "Hello! Any thoughts on the estimate for the stairwell?"}
+      - {speaker: client, text: "Plans changed for the moment. If we go ahead later, I will contact you."}
   - id: P30
     expected: contact_ok
     reason: postpone_or_comparing

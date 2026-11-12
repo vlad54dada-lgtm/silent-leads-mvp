@@ -177,10 +177,12 @@ Thumbtack / Yelp; "stop by" meaning "come over".
 STEP 2 - hard stop anywhere in the history -> do_not_contact, reason "optout" or
 "negative_or_complaint":
 - STOP or UNSUBSCRIBE as a message; asking not to text / not to call / to delete the number;
-  explicitly telling us to stop following up or reminding because they will get in touch
-  themselves ("please stop the reminders, I will reach out myself") (optout). A plain "I'll let
-  you know", "I'll be in touch if we decide", "will reach out when ready" WITHOUT a request to
-  stop the reminders is NOT a stop: it is ordinary postponing (step 3, contact_ok);
+  telling us, even politely or softly, to stop following up, checking in or reminding because
+  they will be the one to get in touch ("no need to check in again, I would rather contact you
+  myself when I am ready") (optout). The sign is a comment on OUR follow-ups: the client asks
+  us to wait for them. A plain "I'll let you know", "I'll be in touch if we decide", "will
+  reach out when ready" that says nothing about our follow-ups is NOT a stop: it is ordinary
+  postponing (step 3, contact_ok);
 - rudeness, "this is spam", threatening a review or a complaint, a complaint about our work or
   about the sales rep (negative_or_complaint). Sharp words about the price alone are a price
   objection (step 3), not a hard stop.
